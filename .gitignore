@@ -1,0 +1,39 @@
+# Data and Outputs
+data/
+outputs/
+logs/
+
+# EEG Data Formats
+*.set
+*.fdt
+*.fif
+*.edf
+*.bdf
+*.vhdr
+*.vmrk
+*.eeg
+
+# Images and Reports (Except Markdown)
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+*.html
+
+# Python environment and Temp
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.env
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE settings
+.vscode/
+.idea/
+.DS_Store
