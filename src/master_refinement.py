@@ -1,70 +1,49 @@
 import mne
-import pandas as pd
 import numpy as np
 from pathlib import Path
-import os
+from config import *
 
-def refine_master_epochs(min_incorrect=15):
-    base_path = Path("/home/chinh303/Downloads/ERN Raw Data BIDS-Compatible")
-    report_path = base_path / "data" / "processed" / "master_preprocessing_report.csv"
-    epochs_dir = base_path / "data" / "processed" / "master_epochs"
-    refined_dir = base_path / "data" / "processed" / "refined_master"
-    refined_dir.mkdir(parents=True, exist_ok=True)
+def refine_dataset():
+    sub_files = list(EPOCHS_DIR.glob("*_master-epo.fif"))
+    sub_files.sort()
     
-    if not report_path.exists():
-        print("Error: master_preprocessing_report.csv not found.")
-        return
-
-    report = pd.read_csv(report_path)
-    # Filter valid subjects
-    valid_subs = report[(report['status'] == 'SUCCESS') & (report['incorrect'] >= min_incorrect)]
+    print(f"Refining subjects (min incorrect: {MIN_INCORRECT_TRIALS})...")
     
-    print(f"Refining {len(valid_subs)} subjects (min incorrect: {min_incorrect})...")
-    
-    summary_data = []
-
-    for _, row in valid_subs.iterrows():
-        sub = row['sub']
-        try:
-            epochs = mne.read_epochs(epochs_dir / f"{sub}_master-epo.fif", preload=True, verbose=False)
+    valid_count = 0
+    for f in sub_files:
+        sub_id = f.stem.split('_')[0]
+        epochs = mne.read_epochs(f, preload=True, verbose=False)
+        
+        n_correct = len(epochs['Correct'])
+        n_incorrect = len(epochs['Incorrect'])
+        
+        if n_incorrect < MIN_INCORRECT_TRIALS:
+            # print(f"  SKIP: {sub_id} (Too few incorrect: {n_incorrect})")
+            continue
             
-            # 1. Trial Balancing (Undersample Correct)
-            n_inc = len(epochs['Incorrect'])
-            
-            # Identify indices for Correct and Incorrect
-            event_id_rev = {v: k for k, v in epochs.event_id.items()}
-            correct_indices = [i for i, event in enumerate(epochs.events) if event_id_rev[event[2]].startswith('Correct')]
-            incorrect_indices = [i for i, event in enumerate(epochs.events) if event_id_rev[event[2]].startswith('Incorrect')]
-            
-            # Randomly select n_inc from correct
-            np.random.seed(42)
-            balanced_correct = np.random.choice(correct_indices, size=n_inc, replace=False)
-            
-            # Combine and sort to maintain temporal order if needed
-            final_indices = np.concatenate([balanced_correct, incorrect_indices])
-            final_indices.sort()
-            
-            epochs_balanced = epochs[final_indices]
-            
-            # 2. Narrow-band Filter (4-8 Hz)
-            # This is standard for ERN theta analysis
-            epochs_theta = epochs_balanced.copy().filter(4, 8, fir_design='firwin', verbose=False)
-            
-            # Save
-            out_file = refined_dir / f"{sub}_theta_balanced-epo.fif"
-            epochs_theta.save(out_file, overwrite=True, verbose=False)
-            
-            summary_data.append({'sub': sub, 'final_trials_per_cond': n_inc})
-            print(f"  DONE: {sub} | Balanced at {n_inc} trials.")
-            
-        except Exception as e:
-            print(f"  FAILED: {sub} | {e}")
-
-    # Save summary
-    pd.DataFrame(summary_data).to_csv(base_path / "data" / "processed" / "refinement_summary.csv", index=False)
+        # 1. Theta Filtering (4-8 Hz)
+        epochs_theta = epochs.copy().filter(l_freq=THETA_BAND[0], h_freq=THETA_BAND[1], 
+                                            fir_design='firwin', verbose=False)
+        
+        # 2. Trial Balancing (1:1 Ratio)
+        n_match = min(n_correct, n_incorrect)
+        
+        # Random pick for balancing
+        idx_correct = np.random.choice(len(epochs_theta['Correct']), n_match, replace=False)
+        idx_incorrect = np.random.choice(len(epochs_theta['Incorrect']), n_match, replace=False)
+        
+        balanced_epochs = mne.concatenate_epochs([
+            epochs_theta['Correct'][idx_correct],
+            epochs_theta['Incorrect'][idx_incorrect]
+        ], verbose=False)
+        
+        save_file = REFINED_DIR / f"{sub_id}_theta_balanced-epo.fif"
+        balanced_epochs.save(save_file, overwrite=True, verbose=False)
+        # print(f"  DONE: {sub_id} | Balanced at {n_match} trials.")
+        valid_count += 1
+        
     print("-" * 50)
-    print(f"Refinement complete. Valid subjects: {len(summary_data)}")
+    print(f"Refinement complete. Valid subjects: {valid_count}")
 
 if __name__ == "__main__":
-    # Threshold 15 is standard for stable PLV
-    refine_master_epochs(min_incorrect=15)
+    refine_dataset()
