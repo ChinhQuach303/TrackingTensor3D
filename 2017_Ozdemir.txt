@@ -1,0 +1,2138 @@
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+669
+
+Recursive Tensor Subspace Tracking for
+Dynamic Brain Network Analysis
+Alp Ozdemir
+
+, Edward M. Bernat, and Selin Aviyente
+
+Abstract—Recent years have seen a rapid growth in computational methods for a better understanding of functional connectivity brain networks constructed from neuroimaging data. Most of
+the current work has been limited to static functional connectivity
+networks (FCNs), where the relationships between different brain
+regions is assumed to be stationary. Recent work indicates that
+functional connectivity is a dynamic process over multiple time
+scales and the dynamic formation and dissolution of connections
+plays a key role in cognition, memory, and learning. In the proposed
+work, we introduce a tensor-based approach for tracking dynamic
+functional connectivity networks. The proposed framework introduces a robust low-rank+sparse structure learning algorithm for
+tensors to separate the low-rank community structure of connectivity networks from sparse outliers. The proposed framework is
+used to both identify change points, where the low-rank community structure of the FCN changes significantly, and summarize
+this community structure within each time interval. The proposed
+framework is applied to the study of cognitive control from electroencephalogram data during a Flanker task.
+Index Terms—Dynamic functional connectivity networks, electroencephalogram, low-rank tensor decomposition.
+
+I. INTRODUCTION
+DVANCED functional imaging techniques such as EEG
+and functional magnetic resonance imaging (fMRI) have
+enabled the study of the neuronal mechanisms underlying cognition in detail. These studies have revealed that transient synchronization, referred to as functional connectivity (FC), between
+spatially distributed neural populations is responsible for human cognition, perception and emotion [1]–[3]. Recently, tools
+from graph theory have been employed to analyze the functional
+connectivity of the brain by associating nodes with distinct brain
+regions and edges with pairwise interactions between them [4],
+[5]. Most of the current work on functional connectivity network
+analysis focuses on static networks where the networks correspond to average activity over a time and frequency window
+
+A
+
+Manuscript received January 12, 2017; accepted January 23, 2016. Date of
+publication February 13, 2017; date of current version November 3, 2017. This
+work was supported in part by National Science Foundation under Grant CCF1422262 and Grant CCF-1218377. The associate editor coordinating the review
+of this manuscript and approving it for publication was Prof. Petar M. Djuric.
+A. Ozdemir and S. Aviyente are with the Department of Electrical and Computer Engineering, Michigan State University, East Lansing, MI, 48824 USA
+(e-mail: ozdemira@msu.edu; aviyente@egr.msu.edu).
+E. M. Bernat is with the Department of Psychology, University of Maryland,
+College Park, MD, 20742 USA (e-mail: ebernat@umd.edu).
+Color versions of one or more of the figures in this paper are available online
+at http://ieeexplore.ieee.org.
+Digital Object Identifier 10.1109/TSIPN.2017.2668146
+
+of interest. However, recent studies have shown that functional
+connectivity networks change dynamically in short time scales
+and exhibit task-related patterns [6]–[10]. This continuous formation and destruction of functional connectivity also controls
+the emergence of a unified neural process in cognition, perception and memory [10]–[12].
+To better understand the brain dynamics, early studies focused on extracting graph theoretic measures across time for a
+time-varying analysis of FC graphs [11], [13], [14]. For example, Valencia et al. [15] showed how the small-world structure
+of FC networks evolve during a visual stimulus. Similarly, Fallani et al. [16] presented a graph theoretical approach for FC
+networks to identify persistent edges during a motor task. Recently, dynamic FC network (dFCN) tracking approaches have
+been combined with network state estimation techniques. Allen
+et al. [17] assume that the FC network at each time point is
+at a distinct network state where the network states are determined through k-means clustering of dFCNs across time and
+subjects from resting state fMRI data. Similarly, Dimitriadis
+et al. [18] introduced FC microstates inspired by the EEG microstate literature [19]. In [20], the network states are obtained
+through clustering and Markov modelling to identify both FCstates and the transitions between them. Similarly in [21], the
+network states are identified by evolutionary clustering applied
+to FC edge timeseries. An alternative approach to dFCN analysis assumes that network states are made up of multiple building
+blocks. Leonardi et al. [22] propose a principal component analysis (PCA) based approach to reveal the intrinsic FC patterns
+named as eigenconnectivities, and describe the FC matrices as
+weighted sum of eigenconnectivities. Similarly, different PCA
+based approaches have been used to identify dynamics of both
+resting-state [23] and task-based EEG [24]. More recently, [25]
+compared clustering and SVD based approaches to identify task
+related and resting state FC dynamics and showed that FC patterns obtained from an SVD based approach better represent the
+task-based dynamics, while patterns obtained from a clustering
+based approach are more suitable to identify resting state FC
+dynamics.
+In addition to approaches focused on unraveling the network
+states from dFCNs, recently introduced methods have also
+focused on detection of change points where the network
+structure considerably changes. Cribben et al. [26] presented a
+data-driven technique which first detects the temporal change
+points by a greedy partitioning scheme and then estimates a
+connectivity graph for FC patterns in each temporal partition.
+Zhang et al. [27], presented dynamic Bayesian variable partition
+
+2373-776X © 2017 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See http://www.ieee.org/publications standards/publications/rights/index.html for more information.
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+670
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+model which simultaneously identifies the state transitions and
+learns significant FC patterns in each state. Similarly, Ou et al.
+[28] proposed a Bayesian model to detect change points from
+functional brain interactions and evaluated the network structure
+using nonnegative matrix factorization within each temporal
+segment. However, all of these approaches make use of timeseries data and are not based on the dFCNs constructed directly
+from data. Moreover, these approaches assume a multivariate
+Gaussian model for the underlying time series data and require
+individual analysis of each subject before inferring the group’s
+network structure. Finally, these methods are computationally
+expensive as they rely either on greedy search or probabilistic
+metrics.
+In this paper, we propose a tensor based representation of
+dFCNs for tracking and summarizing the functional connectivity across time and subjects from task-based EEG data. First,
+we introduce a tensor subspace analysis method for robust lowrank + sparse structure recovery. This is motivated by the fact
+that FCNs are known to have a modular structure which translates to a low-rank connectivity matrix [29]. In the case of
+dFCNs, these low-rank structures can be assumed to change
+slowly in time, similar to EEG microstates [19], which can be
+described as a slowly changing subspace. Conventional subspace analysis methods such as PCA and SVD cannot deal with
+higher order data and existing tensor decomposition methods
+such as higher-order SVD (HoSVD) and parallel factor analysis (PARAFAC) are not robust to sparse outliers or noise in
+the data [30]–[33]. The proposed recursive framework separates the low-rank part of the data from sparse noise components by identifying change points and updating the estimates
+of low-rank subspaces. Identified change points corresponding
+to the subspace change along the connectivity mode of the tensor are used to define time intervals of interest. The low-rank
+tensor within each time interval is then summarized through
+a recently introduced multiple network clustering approach
+known as Fiedler Consensus Clustering Approach (FCCA) [34].
+Finally, the proposed framework is applied to dFCNs constructed from EEG data collected during a study of error-related
+negativity.
+The proposed framework offers three major contributions to
+both the literature in online tensor subspace tracking and dFCN
+analysis. First, unlike most of the current work which focuses
+on the dynamics of resting state fMRI networks, we focus on the
+dynamics of task related networks from EEG data. As EEG data
+has high temporal resolution and the data considered in this paper is response locked, determining the actual time points where
+significant changes to network structure occurs is highly relevant. The proposed framework offers a way to determine time
+intervals during which the FCN has a common quasi-stationary
+pattern across time and subjects, i.e. slowly changing subspace
+structure similar to microstates [19]. Second, most of the current work reduces the high dimensionality of the dFCNs by
+vectorizing the connectivity matrices into long vectors before
+identifying the network states. This approach does not preserve
+the topological structure of the network. In the proposed work,
+we address this problem by keeping the network structure of
+FCNs intact by using tensor representations. Through tensor
+
+representation, we can capture the variability common to all
+subjects across time. Finally, the proposed low-rank plus sparse
+structure learning algorithm for tensors offers a novel way of
+recovering a low-rank subspace estimate along each mode of the
+data where the rank is defined through the Tucker rank. This rank
+definition is directly related to the modular structure of FCNs .
+The proposed approach separates the low-rank part of the data
+from sparse noise components along time and then summarizes
+the network within each time interval through clustering the extracted low-rank networks within the time interval. This yields
+better structure information as it is equivalent to denoising the
+networks.
+II. BACKGROUND
+A. Robust Principal Component Analysis
+High dimensional data mostly lies in a lower dimensional
+subspace and principal component analysis (PCA) is the most
+widely used technique to identify this lower dimensional subspace. Recently, PCA has been used for identifying network
+states from dynamic functional connectivity networks [22], [24].
+However, it is known that PCA suffers from non-Gaussian corruptions and may find a completely wrong principal subspace
+in the presence of even a few outliers. These drawbacks have
+forced researchers to develop more robust subspace estimation
+techniques which is a significantly more difficult problem than
+standard PCA [35], [36].
+Since the recent work by Candes et al. and Chandrasekharan et al. [37], [38], the general problem of separating a sparse
+matrix and a low-rank matrix from their sum has received a
+lot of attention. The final goal usually is to either find the
+column span of the low-rank matrix or the support of the
+sparse one. This is now commonly referred to as the ”low-rank
++ sparse recovery” problem. There has been a large amount
+of recent work on batch methods for low-rank + sparse recovery and its various extensions including Principal Component Pursuit, Outlier Pursuit and Low-Leverage Decomposition
+[38]–[52].
+One of the well-known robust PCA methods is principal component pursuit (PCP) which assumes that the data matrix M has
+a low-rank part L and a sparse noise or outlier S as [37]:
+M = L + S.
+
+(1)
+
+It was shown that L can be efficiently estimated by solving
+the following optimization problem:
+min  L ∗ +λ  S 1
+s.t. L + S = M,
+
+(2)
+
+where
+λ is the regularization parameter and  L ∗ =
+r
+σ
+i=1 i (L) denotes the nuclear norm where σi ’s are the first r
+singular values of the matrix L. This problem has been solved
+by using convex optimization approaches, i.e., augmented Lagrange multiplier algorithm [37], accelerated proximal gradient
+approach [53].
+In order to reduce the computational complexity and to
+achieve online subspace tracking, various approaches have also
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+been proposed to solve the RPCA problem, i.e., GRASTA, PETRELS and REPROCS [32], [54]–[61]. These approaches first
+identify the subspace that the low rank data lies in, then recovers
+incoming low-rank measurement vectors from missing entries
+by considering this subspace information.
+A recently introduced algorithm REPROCS recursively
+separates the low-rank part from sparse noise as follows. Let
+Mt ∈ Rn ×1 be a time-series of measurement vectors written
+as Mt = Lt + St where Lt is the low-rank part which lies in a
+subspace spanned by Pt and St is the sparse noise vector. Let P̂t
+be an accurate estimate of the r-dimensional basis Pt at time t
+and P̂t,⊥ be the orthogonal complement of P̂t . Let αt := P̂t Lt
+be the projection of Lt onto P̂t and βt := (P̂t,⊥ ) Lt be a
+projection of Lt onto P̂t,⊥ . Then, Mt can be rewritten as
+Mt = P̂t αt + P̂t,⊥ βt + St . REPROCS first projects the
+measurement vector onto P̂t,⊥ to approximately nullify the
+low-rank part Lt . As yt := (P̂t,⊥ )Mt , where yt can be rewritten as yt = (P̂t,⊥ )St + βt , and the dimension of the projected
+data vector reduces to n − r. Since projecting Mt onto P̂t,⊥
+nullifies the contribution of Lt , βt can be interpreted as small
+noise. Therefore, solving for n-dimensional St from (n − r)dimensional yt becomes a traditional sparse recovery problem.
+Once Ŝt is recovered, Lt can be estimated as L̂t = Mt − Ŝt .
+Performance of this algorithm highly depends on the correctness
+of the estimated low-rank subspace and the slowly changing
+subspace assumption [32], [59]–[61]. However, this method
+is limited to vector type measurements, and cannot be applied
+directly to higher order datasets such as tensors. In this paper,
+we will present an extension of REPROCS to tensor type data.
+Recently, tensor-based approaches have been proposed to
+track dynamic tensor subspaces such as dynamic tensor analysis, streaming tensor analysis and window based tensor analysis
+[62], [63]. However, these approaches provide computationally
+efficient frameworks for analysis of streaming datasets by recursively updating subspace information and do not address
+the robustness of the subspace estimates. Goldfarb and Qin extended robust PCA to tensors (HoRPCA) by solving low-rank +
+sparse recovery problem for general higher order tensors [33].
+However, this method is highly computationally expensive and
+does not update the subspaces online, i.e., would not be useful for tracking subspace changes across time. Li et al. [64]
+presented a robust subspace learning algorithm (RTSL) that incrementally updates the tensor subspace. Moreover, Nion et al.
+[65] proposed two adaptive approaches to track PARAFAC decomposition of 3-way tensors. These approaches suggest to update the PARAFAC decomposition at every time point based
+on simultaneous diagonalization or minimization of weighted
+least squares criterion. More recently, Mardani et al. [66] proposed an online subspace learning method based on nuclear
+norm minimization and extended this approach for matrices and
+higher order datasets. Extension of this algorithm to tensors
+takes advantage of PARAFAC model to minimize tensor rank
+and considers temporal information as one of the tensor modes.
+Similar to [66], OLSTEC proposed in [67] also tracks the subspace of partially observed higher-order data using PARAFAC
+decomposition.
+
+671
+
+B. Tensor Algebra & Tensor Decompositions
+An order N tensor is denoted as X ∈ RI 1 ×I 2 ×...×I N where
+xi 1 ,i 2 ,..i N corresponds to the (i1 , i2 , ..iN )th element of the tensor X . Vectors obtained by fixing all indices of the tensor except
+the one that corresponds to nth mode are called mode-n fibers.
+Mode-n product: The mode-n product of a tensor X ∈ RI 1 ×...I n ×...×I N and a matrix U ∈ RJ ×I n is
+denoted as Y = X ×n U = (Y )i 1 ,i 2 ,...,i n −1 ,j,i n + 1 ,...,i N =
+I n
+i n =1 xi 1 ,...,i n ,...,i N uj,i n and is of size I1 × . . . × In −1 × J ×
+In +1 × . . . × IN .
+Tensor matricization: Process of reordering the elements of
+the tensor into a matrix is known as matricization or unfolding. The mode-n matricization
+of tensor Y ∈ RI 1 ×...I n ×...×I N
+
+I n × i ∈{1 , . . . , N }/ {n } I i
+is denoted as Y(n ) ∈ R
+and is obtained by arranging mode-n fibers to be the columns of the resulting matrix.
+Unfolding the tensor Y = X ×1 U1 ×2 U2 . . . ×N UN along
+mode-n is equivalent to Y(n ) = Un X(n ) (UN ⊗ . . . Un +1 ⊗
+Un −1 . . . ⊗ U1 ) , where ⊗ is the matrix Kronecker product.
+The n-Rank: Let X ∈ RI 1 ×I 2 ×...×I N be an N-way tensor, the
+n-rank of X is the collection of rank of mode matrices X(n )
+and is denoted as:
+
+
+rankn (X ) = rank(X(1) ), rank(X(2) ), . . . , (X(n ) ) , (3)
+where n = 1, 2, . . . , N .
+Tucker decomposition: Tucker decomposition is a form of
+higher order SVD. Any tensor X ∈ RI 1 ×I 2 ×...×I N can be decomposed as mode products of a core tensor S ∈ RI 1 ×I 2 ×...×I N
+and N mode matrices U(n ) ∈ RI n ×I n [68], [69].
+X = S ×1 U(1) ×2 U(2) . . . ×N U(N ) ,
+X =
+
+I1
+
+i 1 =1
+
+...
+
+IN
+
+
+si 1 ,i 2 ,...,i N ci 1 (U(1) ) ◦ . . .
+
+i N =1
+
+◦ci N (U(N ) ),
+
+(4)
+
+where the matrix U(n ) contains the left singular vectors of
+X(n ) and cn (·) is nth column vector and S is obtained by
+
+
+S = X ×1 U
+(1) ×2 U(2) . . . ×N U(N ) .
+C. Time-Varying Measure of Phase Synchrony
+In this paper, pairwise functional connectivity will be quantified using a recently introduced time-frequency phase estimation
+method based on Reduced Interference Rihaczek distribution
+(RID-Rihaczek) [70], [71]. Phase synchronization within
+different frequency bands across the brain has been shown
+to be a plausible mechanism explaining neuronal integration
+[3], [72].
+Reduced Interference Rihaczek Distribution (RID-Rihaczek)
+is given by:
+
+
+
+−(θτ )2
+θτ
+exp j
+A(θ, τ )
+C(t, ω) =
+exp
+σ
+2
+× e−j (θ t+τ ω ) dτ dθ,
+2
+
+(5)
+
+where exp(−(θτ ) /σ) is the Choi-Williams kernel used to filter
+out the cross-terms, A(θ, τ ) = x(u + τ2 )x∗ (u − τ2 )ej θ u du is
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+672
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+the ambiguity function of the signal x(t) and exp(jθτ /2) is
+the kernel corresponding to the Rihaczek distribution [73]. The
+phase difference between two signals, xi and xj , based on this
+complex distribution is computed as
+Φij (t, ω) = arg
+
+Ci (t, ω)Cj∗ (t, ω)
+|Ci (t, ω)||Cj (t, ω)|
+
+,
+
+(6)
+
+where Ci (t, ω) and Cj (t, ω) refer to the complex energy distributions of the two signals xi (t) and xj (t) respectively. A
+synchrony measure quantifying the intertrial variability of the
+phase differences, phase locking value (PLV), is defined as
+1 
+exp(jΦkij (t, ω)) ,
+κ
+κ
+
+PLVi,j (t, ω) =
+
+(7)
+
+k =1
+
+where κ is the number of trials and Φkij (t, ω) is the time-varying
+phase estimate between two signals recorded at electrodes i and
+j for the kth trial. If the phase difference varies little across the
+trials, PLV is close to 1. Compared to the existing synchrony
+measures, RID-Rihaczek based phase synchrony measure is
+more robust to noise, and has uniformly high time-frequency
+resolution with less bias [70].
+In this paper, we construct the functional connectivity matrices at each time point and for each subject as:
+Gi,j (t) =
+
+ωb
+
+1
+PLVi,j (t, ω),
+ωb − ωa ω =ω
+
+(8)
+
+a
+
+where the entries of the connectivity networks are computed as
+the average synchrony between pairs of nodes at time t averaged
+over a frequency band of interest which is the theta band. Once
+the individual connectivity matrices are constructed, a threeway tensor Xt ∈ RN ×N ×S is formed at each time point across
+all subjects as:
+Xt (i, j, s) = Gsi,j (t)
+
+(9)
+
+where i, j ∈ {1, 2, .., N } correspond to the nodes or brain regions in the network and s ∈ {1, 2, .., S} is the subject.
+D. Consensus Clustering and Fiedler Consensus Clustering
+Approach
+In neuroscience problems, it is desirable to find a common
+network structure across subjects performing the same task
+or in the same population [74], [75]. Recently, we have
+introduced Fiedler Consensus Clustering Algorithm (FCCA)
+to address this issue to obtain a common community structure
+across multiple weighted graphs, where the graphs correspond
+to individual functional connectivity networks discussed in
+Section II-C. [34]. One of the most common ways to partition
+a graph is spectral clustering. Spectral clustering generally
+uses the eigenvectors of the Laplacian matrix computed as
+L = D − A, where A is the adjacency matrix of the graph and
+D is the degree matrix containing
+degrees of nodes along the
+
+diagonal with D(i, i) = N
+j =1, j =i A(i, j). The eigenvector
+corresponding to the second smallest non-zero eigenvalue of the
+Laplacian matrix provides the optimal minimal cut of a graph
+and this eigenvector is referred to as the Fiedler vector [76].
+
+In FCCA, the original connectivity matrices are bi-partitioned
+into two clusters using the Fiedler partitioning method. This
+results in a cluster matrix for the rth network Tr such that
+
+Tr (i, j) =
+
+1 if nodes vi , vj are in the same cluster
+0 otherwise
+
+(10)
+
+and r = {1, 2, . . . , m} where m is the number of networks.
+In order to find the common community structure across multiple graphs, we introduce a co-occurence matrix W where
+
+T r (i,j )
+and W (i, j) ∈ [0, 1]. W (i, j) is the
+W (i, j) = m
+r =1
+m
+probability that a pair of nodes are members of the same cluster across multiple graphs. The adjacency matrix reflects the
+strength of a direct relationship between a node pair, whereas
+W reflects the likeliness that a pair of nodes are in the same
+cluster across all subjects.
+The Laplacian matrix of W is computed and the Fiedler
+vector is found to form a bi-partition of W into a community
+structure composed of clusters c1 and c−1 . Since W represents
+the probability that a node pair should be clustered together,
+the Fiedler partition of W represents the community structure
+common to all graphs. The initial partition set, C = {c1 , c−1 },
+contains 2 clusters but if k > 2 is desired, the process can be
+repeated by selecting a cluster in C to partition. In this case,
+c1 or c−1 is selected based on the quality score of each cluster
+(see [34] for more details on the particular quality score used in
+FCCA).
+Next, sub-matrices are extracted from the original connectivity matrices such that they only contain the nodes of the chosen
+cluster. These sub-matrices are used to derive the new sub cooccurence matrix, Wy , where y = 1 if cluster c1 was selected
+and y = −1 if cluster c−1 was selected. The Fiedler partitioning
+is performed on the selected cluster to obtain two new clusters,
+cy1 and cy−1 . The final cluster set C = {c−y , cy1 , cy−1 } is a concatenation of the two new clusters with the original cluster that
+was not chosen for bi-partitioning. This method can be iterated
+until an optimal quality score or a desired number of clusters is
+achieved.
+III. HIGHER-ORDER RECURSIVE LOW-RANK + SPARSE
+STRUCTURE LEARNING (HO-RLSL)
+A. Problem Statement
+In this paper, we will represent dynamic functional connectivity networks across subjects as a three-way dynamic tensor
+Mt ∈ RN 1 ×N 2 ×N 3 . We will assume that this tensor
+ has a low(i)
+min(Ni , 3k =1,k =i Nk )
+rank structure Lt with rank(Lt )
+along the connectivity and subject modes corresponding to the
+modular network structure plus some sparse outlier connections
+St as:
+Mt = Lt + St .
+
+(11)
+
+Our goal is to separate the low-rank tensor Lt from its noisy
+version Mt . This goal leads to the following optimization problem where the Tucker rank of Lt is minimized while simulta-
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+neously minimizing the l1 -norm of the noise part, St [33]:
+min
+
+Lt , St
+
+Algorithm 1: Higher-order Recursive Low-Rank + Sparse
+Structure Learning.
+
+ Lt ∗ +λ  St 1
+
+s.t. Lt + St = Mt ,
+
+(i)
+
+(12)
+
+where  Lt ∗ is the nuclear norm of the low-rank tensor.
+Since minimizing the nuclear norm is an NP hard problem,
+HoRPCA presented in [33] replaces it by its convex surrogate
+which is the sum of the nuclear norms of the mode-i unfoldings:
+3
+(i)
+i=1  Lt ∗ . One way to solve this optimization problem
+and obtain the low-rank and sparse parts of Mt is to use HoRPCA presented in [31]. However, there are two main drawbacks
+of applying HoRPCA for streaming or time-varying tensor data.
+First, it is very time consuming to compute HoRPCA in batch
+mode since all of the high dimensional data needs to be stored
+and processed. Second, HoRPCA yields different low-rank subspace information at each time point and subspace tracking as
+desired in this paper requires additional metrics to compare the
+subspaces across time. To improve the computation efficiency
+and to better capture the evolving dynamics of the data, we propose to adapt and extend the projection based subspace update
+approach outlined in REPROCS. Thus, the optimization problem in (12) is solved in two steps. First, instead of determining
+the low-rank subspace at each time point, we propose to update the subspace across time by minimizing the Tucker norm,
+or the nuclear norm of each unfolding. As [37] has shown, the
+minimizer of the nuclear norm can be obtained through singular
+value thresholding (SVT). As Algorithm 1 will show, we will
+use this approach to determine the low-rank subspace. In step 2,
+we project the observed tensor, Mt , to a subspace orthogonal to
+the estimated low-rank subspace and transform (11) to a sparse
+recovery in noise problem as will be illustrated in (14) and (15)
+to obtain St .
+B. Algorithm Description
+Suppose that we have a sequence of training tensors defined as
+Mtrain which do not contain any sparse information and are used
+for the initial estimate of the subspace in which each mode of
+Lt lies in. In the case of dynamic FCNs constructed from taskbased EEG, this may correspond to the pre-stimulus activity.
+Mtrain ∈ RN 1 ×N 2 ×N 3 ×t train can be considered as a 4-way tensor
+where the time information constitutes the 4th mode and its full
+Tucker decomposition is
+(1)
+(2)
+(3)
+(4)
+Mtrain = C ×1 P0 ×2 P0 ×3 P0 ×4 P0
+(1)
+
+(2)
+
+(3)
+
+(4)
+
+673
+
+(13)
+
+where P0 , P0 , P0 and P0 are the basis matrices along
+(i)
+(i)
+each mode with P0 ∈ RN i ×N i . Let P̂0 s be the truncated ver(i)
+sion of P0 obtained by keeping the columns with the singular
+(i)
+(i)
+values greater than σm in . P̂0 ∈ RN i ×r 0 s where i ∈ {1, 2, 3}
+(i)
+give the initial subspace information for Lt and r0 is the rank
+(i)
+of P̂0 . The goal is to estimate Lt and St for each t > ttrain by
+(i)
+recursively updating its corresponding basis Pt s. The Lt ’s are
+assumed to satisfy a slowly changing low-rank subspace model
+which will be detailed in Section III-C.
+
+1: Input: Mt , P̂0 s
+2: Output: Lˆt , Sˆt , tj
+3: for t > 0 do
+4:
+for i=1:3 do
+(i)
+(i)
+(i)
+5:
+φ t = I − P̂t−1 (P̂t−1 )
+6:
+end for
+(1)
+(2)
+(3)
+7:
+Yt = Mt ×1 φ t ×2 φ t ×3 φ t
+8:
+Recover Sˆt from Yt by using GTCS-S algorithm
+[77].
+9:
+Estimate Lˆt ← Mt − Sˆt
+10:
+if mod(t − tj + 1, α) = 0 then
+11:
+for i=1:3 do
+
+(i)
+(i)
+12:
+D(i) = L̂t j +(k −1)α · · · L̂t j +k α −1
+(i)
+
+(i)
+
+13:
+
+P̂(t) = deleteDirection(D, P̂(t−1) )
+
+14:
+15:
+16:
+
+P̂(t) = addDirection(D, P̂(t) )
+end for
+(1)
+(1)
+(2)
+(2)
+(3)
+if P̂(t) = P̂(t−1) or P̂(t) = P̂(t−1) or P̂(t) =
+
+(i)
+
+(i)
+
+(3)
+
+P̂(t−1) then
+17:
+j ← j + 1, tj ← t
+(1)
+(1)
+(2)
+(2)
+(3)
+(3)
+18:
+P̂(j ) ← P̂(t) , P̂(j ) ← P̂(t) , P̂(j ) ← P̂(t)
+19:
+end if
+20:
+else
+(1)
+(1)
+(2)
+(2)
+(3)
+(3)
+21:
+P̂(t) ← P̂(t−1) , P̂(t) ← P̂(t−1) , P̂(t) ← P̂(t−1)
+22:
+end if
+23: end for
+
+Let Pt be the set of projection matrices which form the
+basis for the subspaces in which each mode of Lt lies in
+(1)
+(2)
+(3)
+Pt = {Pt , Pt , Pt }. Assume Pt has been accurately predicted using past estimates of Lt such that the projection of the
+new basis at time t to the orthogonal
+complement of the past
+
+(i)
+(i) 
+(i)
+I − P̂t−1 (P̂t−1 ) Pt
+is small. Then Mt is
+estimates
+2
+(i)
+
+projected to the space orthogonal to P̂t−1 s defined through the
+(i)
+(i)
+(i)
+projection operators φ t = I − P̂t−1 (P̂t−1 ) to obtain Yt as
+(1)
+(2)
+(3)
+Yt = Mt ×1 φ t ×2 φ t ×3 φ t , which can be rewritten as:
+(1)
+
+(2)
+
+(3)
+
+Yt = (Lt + St ) ×1 φ t
+
+×2 φ t
+
+×3 φ t ,
+
+(1)
+
+×2 φ t
+
+(2)
+
+(3)
+
+(2)
+
+(3)
+
+Yt = βt + St ×1 φ t
+(1)
+
+×3 φ t ,
+
+(14)
+(i)
+
+(i)
+
+where βt = Lt ×1 φ t ×2 φ t ×3 φ t . Since  φ t Pt 2 is
+(i)
+small, the projection of Lt to φ t s will yield small  βt F
+(see Appendix A). Notice that, although the projection matrices
+(i)
+(i)
+φ t ’s are of size Ni × Ni , they have rank Ni − rank(P̂t ).
+Therefore, obtaining St from Yt can be represented as sparse
+(i)
+recovery problem in small noise. Since P̂t ’s are dense and
+restricted isometry constants (RIC) of measurement matrices
+φ(i)
+(φ
+t ) are small [60], we can accurately recover St from Yt by
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+674
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+solving following problem:
+Sˆt = arg min  St 1 ,
+(1)
+
+s.t.  Yt − St ×1 φ t
+
+(2)
+
+×2 φ t
+
+(3)
+
+×3 φ t
+
+F ≤ .
+
+(15)
+
+To recover St from Yt , we apply serial recovery procedure for
+compressed tensors, known as generalized tensor compressive
+sensing - serial (GTCS-S) presented in [77]. This algorithm repeatedly unfolds the compressed tensor along one of the modes
+and applies l1 optimization to recover its columns. Once Sˆt is
+recovered, Lt can be estimated as Lˆt = Mt − Sˆt .
+C. Slowly Changing Subspace & Change Points
+The following assumptions are made to define slowly changing subspace along each mode of the tensor:
+1) Let tj denote the change points of the low-dimensional
+(i)
+subspaces that Lt s are in. Note that the subspaces
+along each mode can vary independently from the others and as such tj s are the collection of all change points
+across modes. Assume that for τ large enough, any τ
+(i)
+length subsequence of Lt s lies in low-dimensional sub(i)
+(i)
+min(τ, Ni ,
+spaces, i.e. maxt rank([Lt−τ +1 . . . Lt ]
+3
+N
+).
+k
+k =1,k =i
+2) Lt lies in a low dimensional subspace that changes
+(1)
+(2)
+slowly along each mode i.e. Lt = At ×1 Pt ×2 Pt
+(3)
+(i)
+(i)
+×3 Pt with Pt = Pj for all tj ≤ t ≤ tj +1 , j =
+1, 2, . . . J where J is the maximum number of change
+(i)
+(i)
+(i)
+points. Pj is an Ni × rj basis matrix where rj
+3
+min(Ni , k =1,k =i Nk ).
+(i)
+
+3) At the change points, tj , at least one of the Pj ’s changes
+(i)
+
+(i)
+
+(i)
+
+(i)
+
+(i)
+
+(i)
+
+(i)
+
+as Pj = [Pj −1 Pj,add ] , Pj = [Pj −1 \Pj,del ] or Pj =
+
+(i)
+(i)
+(i)
+(i)
+(i)
+[(Pj −1 \Pj,del ), Pj,add ] where Pj,add is a Ni × cj,add basis
+(i)
+(i)
+matrix with (Pj,add ) Pj −1 = 0, i.e., the new directions
+
+added to the projection matrix are orthogonal to the previ(i)
+(i)
+ous directions and Pj,del is a Ni × cj,del matrix of deleted
+basis columns.
+(i)
+(i)
+(i)
+4) There exists constants cm ax such that 0 ≤ cj,add ≤ cm ax <
+
+(i)
+(i)
+r0 . 0 ≤ ji=1 (ci,add − ci,del ) ≤ cdif is required to im(i)
+(i)
+(i)
+(i)
+ply rt ≤ r0 + cdif := rm ax . The number of change
+(i)
+(i)
+(i)
+(i)
+points J
+mini ((Ni − r0 − cdif )/cm ax ), so rm ax +
+2
+(i)
+Ni . Moreover, ( k =i,k =1 Nk )(tj +1 − tj ) 
+Jcm ax
+
+(i)
+(i)
+(i)
+(i)
+r0 + cdif helps to ensure maxt rank([Lt−τ +1 . . . Lt ]
+3
+min(τ, Ni , k =1,k =i Nk ).
+
+5) The projection of Lt along the new added directions,
+,(1)
+,(2)
+,(3)
+At,add = Lt ×1 Pj,add ×2 Pj,add ×3 Pj,add is initially
+small, i.e maxt j ≤t≤t j + α  At,add ∞ ≤ γadd and γadd
+min( Lt F ,  St F ), but can increase gradually.
+In order to enable a more efficient online implementation,
+(i)
+the low-rank subspaces Pt s are estimated and updated every α samples, where α is selected empirically. Similar to the
+projection PCA (p-PCA) procedure used in [61], mode-i un(i)
+foldings L̂t ’s of the last α L̂t ’s are concatenated as D(i) =
+
+Algorithm 2: deleteDirection.
+1: Input: D: data, P: input basis matrix
+2: Output: Q: output basis matrix
+1
+3: λ = diag((P D(P D) )) where w is the number of
+w
+columns of D.
+4: i= find(λ < σmin )
+5: Q = [P\P(i, :)]
+Algorithm 3: addDirection.
+1: Input: D: data, P: input basis matrix
+2: Output: Q: output basis matrix
+3: Projection: compute Dproj ← (I − PP )D
+4: PCA: compute w1 Dproj Dproj = UλU where w is the
+number of columns in D.
+5: i= find(diag(λ) > σmin )
+6: Q = [P U(i, :)]
+(i)
+
+(i)
+
+[L̂t j +(k −1)α · · · L̂t j +k α −1 ] with k ∈ {1, 2, . . . , K} where K
+
+is the maximum number of length α windows and D(i) s are
+(i)
+projected onto subspaces which are orthogonal to P̂(j −1) s as
+(i)
+
+(i)
+
+(i)
+
+follows: Dproj = (I − P̂(j −1) (P̂(j −1) ) )D(i) . Then PCA is ap(i)
+
+(i)
+
+plied to find the subspace which spans Dproj . Let Pj,add be
+the truncated basis that spans this subspace obtained by keep(i)
+ing the eigenvectors with eigenvalues greater than σmin . Pj,add
+(i)
+
+and previous subspace estimate P̂(j −1) together yield the new
+(i)
+
+(i)
+
+(i)
+
+subspace estimate as: P̂(j ) = [P̂(j −1) Pj,add ]. During the update step, some of the existing directions can also be deleted
+from the projection matrix by finding the ones with eigenvalues
+lower than σmin (see Algorithms 2 and 3). If there are any added
+or deleted directions, it means that there is a change point. It
+is also important to note that, the tensor subspace estimation
+implemented in this paper finds subspaces along each mode individually without taking other modes into account. Thus, the
+proposed method is not optimized like higher-order orthogonal
+iteration (HOOI)[78] but offers a computationally efficient way
+of estimating subspaces along each mode.
+D. Computational Complexity
+In this section, we offer a comparison of the computational
+complexity of the proposed approach with respect to REPROCS
+applied to our data in vectorized form. Let the 3-way tensor
+be of size N × N × N . For the time points which do not
+require subspace update, computational complexity of the
+proposed approach is equivalent to the complexity of l1
+regularization O(N 3 ) multiplied by the total number of fibers
+to recover for each mode to obtain the sparse component
+and is equal to 3N 2 O(N 3 ). However, if we use REPROCS
+after vectorizing the data, complexity for the same operations
+become O((N 3 )3 ) = O(N 9 ). For the time points which
+require basis update, there is an additional cost of covariance
+matrix computation and eigenvalue decomposition. For our
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+675
+
+TABLE I
+AVERAGE MSE OVER TIME COMPUTED FOR LOW-RANK COMPONENTS DURING
+DETECTED TIME INTERVALS OBTAINED BY HO-RLSL AND HOSVD FOR
+MODULAR NETWORK STRUCTURE UNDER VARYING NOISE SPARSITY LEVELS
+Noise Level
+
+Method
+
+Interval-1
+
+Interval-2
+
+Interval-3
+
+10%
+
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+
+0.0046
+0.0097
+0.0085
+0.0233
+0.0136
+0.0409
+0.0215
+0.0613
+
+0.0094
+0.0144
+0.0167
+0.0302
+0.0260
+0.0496
+0.0387
+0.0713
+
+0.0045
+0.0095
+0.0084
+0.0229
+0.0137
+0.0405
+0.0216
+0.0607
+
+20%
+30%
+40%
+
+TABLE II
+AVERAGE MSE OVER TIME COMPUTED FOR LOW-RANK COMPONENTS DURING
+DETECTED TIME INTERVALS OBTAINED BY HO-RLSL AND HOSVD FOR
+HIERARCHICAL MODULAR NETWORK STRUCTURE UNDER VARYING NOISE
+SPARSITY LEVELS
+Fig. 1. Illustration of network structures: (a) Modular network (b) Hierarchical
+modular network, (c) Overlapping modules.
+
+approach, covariance matrix computations for the three modes
+have a complexity of 3O((αN ) × N 4 ) = 3O(αN 5 ) operations
+whereas eigenvalue decompositions cost 3O(N 3 ). However,
+REPROCS requires O(α(N 3 )2 ) = O(αN 6 ) operations for
+covariance matrix computation and O((N 3 )3 ) = O(N 9 )
+operations for eigenvalue decomposition.
+IV. RESULTS
+A. Simulated Networks
+The proposed framework is first applied to three simulated
+dynamic tensors Xt ∈ R64×64×60 for t ∈ {1, 2, . . . , 80}. For
+each network type, 20 simulations of the tensors are generated
+where each frontal slice Xt (:, :, i) corresponds to a weighted
+and undirected network. In our experiments, to generate the
+networks, we used three well-known network models known as
+the modular small-world network, hierarchical modular smallworld network and overlapped modular networks 1. Distinct
+regions in the brain which are strongly connected within themselves are specialized for different processes in the brain and,
+this phenomenon is known as functional segregation. Presence
+of these specialized neuronal groups appear as different modules in brain networks. Moreover, some of the nodes in a module
+may have more specialized function which yields hierarchical
+structure in a network while some of the nodes belong to multiple clusters resulting in overlapping modules [79]. All of these
+network structures are illustrated in Fig. 1.
+For the experiments including modular small world network
+model, initially, the networks contain 2 equal size modules.
+After t = 20, both of the modules are slowly divided into two
+smaller modules of size 16 nodes each. After t = 60, the network
+structure evolves back to the initial structure. For the second
+set of experiments with the hierarchical modular small world
+network model, the networks contain 2 equal size modules at
+the beginning. After t = 20, both of the modules are slowly
+divided into two smaller modules of size 16 nodes each while
+
+Noise Level
+
+Method
+
+Interval-1
+
+Interval-2
+
+Interval-3
+
+10%
+
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+
+0.0149
+0.0202
+0.0184
+0.0335
+0.0240
+0.0511
+0.0346
+0.0712
+
+0.0265
+0.0319
+0.0333
+0.0465
+0.0377
+0.0663
+0.0521
+0.0875
+
+0.0137
+0.0189
+0.0171
+0.0322
+0.0225
+0.0497
+0.0326
+0.0699
+
+20%
+30%
+40%
+
+establishing hierarchical structure. After t = 60, the network
+structure evolves back to the initial structure. For the third set of
+experiments with overlapping modules, the networks contain 2
+equal size non-overlapping modules at the beginning. After t =
+20, 25% of the nodes start to belong to both modules. After t =
+60, network structure evolves back to the initial non-overlapping
+structure.
+For all of the experiments, intra-cluster edge values were
+selected from N (0.6, 0.1) and truncated to the interval
+[0, 1] while the inter-cluster edge values were selected from
+N (0.1, 0.1). Moreover, these networks were corrupted by a
+sparse noise matrix Et whose sparsity varies from 10% to
+40% and ei,j ∼ beta(4, 2). Proposed algorithm is applied with
+α = 5 and σmin is determined as 10% of highest singular value
+obtained from the initial subspace estimate along that mode using the first 5 time points. The proposed algorithm is compared
+to an implementation without the sparse recovery step similar to
+performing standard HoSVD at each time point. Mean squared
+error which quantifies the error between estimated and original
+low-rank components for all of the network models are comT end
+1
+puted for both algorithms as MSE =
+Tend − Tstart + 1 t=T start
+2
+ˆ
+ Lt − Lt F
+where Tstart and Tend are the start and end points
+3
+i=1 Ni
+of the detected time interval and Ni is the size of the tensor
+along ith mode.
+Tables I–III show that Ho-RLSL is more robust than HoSVD
+for sparse outliers with smaller MSE values. As the sparsity
+level of the noise increases, the difference in performance
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+676
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+TABLE III
+AVERAGE MSE OVER TIME COMPUTED FOR LOW-RANK COMPONENTS DURING
+DETECTED TIME INTERVALS OBTAINED BY HO-RLSL AND HOSVD FOR
+NETWORK STRUCTURE WITH OVERLAPPING MODULES UNDER VARYING
+NOISE SPARSITY LEVELS
+Noise Level
+
+Method
+
+Interval-1
+
+Interval-2
+
+Interval-3
+
+10%
+
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+Ho-RLSL
+HoSVD
+
+0.0043
+0.0091
+0.0080
+0.0225
+0.0131
+0.0399
+0.0209
+0.0602
+
+0.0088
+0.0107
+0.0195
+0.0250
+0.0336
+0.0435
+0.0509
+0.0640
+
+0.0045
+0.0094
+0.0083
+0.0228
+0.0135
+0.0404
+0.0215
+0.0606
+
+20%
+30%
+40%
+
+TABLE IV
+AVERAGE COMPUTATION TIME FOR HO-RLSL FOR DYNAMIC TENSORS
+CONTAINING 64 × 64 AND 128 × 128 NETWORKS WITH AVERAGE MSE OVER
+TIME COMPUTED FOR LOW-RANK COMPONENTS
+DURING DETECTED TIME INTERVALS
+Tensor Size
+64 × 64 × 60
+128 × 128 × 60
+
+Time (sec)
+
+Interval-1
+
+Interval-2
+
+Interval-3
+
+2.3916 × 10 4
+6.3397 × 10 4
+
+0.0046
+0.0045
+
+0.0090
+0.0065
+
+0.0045
+0.0046
+
+between the two algorithms also increases. Complexity of the
+network structure, i.e., modular vs. hierarchically modular, also
+affects the accuracy of the algorithms and increased structural
+complexity results in increased error as seen in Tables I–III.
+B. Effect of Network Size on Computation Time and
+Performance
+The proposed framework is applied to two simulated dynamic tensors Xt ∈ R64×64×60 and Xt ∈ R128×128×60 for
+t ∈ {1, 2, . . . , 80} to see the effect of network size on the computation time and performance of the algorithm. 10 simulations
+of the tensors are generated where each frontal slice Xt (:, :, i)
+corresponds to a weighted and undirected network and the third
+mode corresponds to the number of subjects. In these experiments, to generate the networks, we used modular small-world
+networks. For the experiments, initially, the networks contain 2
+equal size modules. After t = 20, both of the modules are slowly
+divided into two smaller modules of equal size. After t = 60,
+the network structure evolves back to the initial structure.
+For the experiments, intra-cluster edge values were selected
+from N (0.6, 0.1) and truncated to the interval [0, 1] while the
+inter-cluster edge values were selected from N (0.1, 0.1). Moreover, these networks were corrupted by a sparse noise matrix
+Et whose sparsity is 10% and ei,j ∼ beta(4, 2). Proposed algorithm is applied with α = 5 and σmin is determined as 10% of
+highest singular value obtained from the initial subspace estimate along that mode using the first 5 time points. Mean squared
+error which quantifies the error between estimated and original
+low-rank components for both network sizes are computed for
+both algorithms as described in Section IV-A.
+All of the simulations were run on a computer with Intel(R)
+Core(TM) i5-2500T CPU and 4.00 GB memory. Table IV shows
+that doubling the number of nodes in the network increases
+
+the computation time almost three times. Moreover, increased
+network size yields better low-rank estimation for the complex
+network structures. As seen in Table IV, MSE computed for the
+second time interval where the networks contain more modules
+significantly decreases with the increased network size. This is
+due to the fact that with more modules in the network the number
+of nodes in a module decreases making the subspace estimation
+more challenging. When the number of nodes in the network
+increases, the subspace estimation becomes more accurate.
+C. EEG Data
+The proposed tensor tracking approach is applied to a set
+of connectivity graphs constructed from EEG data containing
+the error-related negativity (ERN) and correct-related negativity (CRN). The ERN is a brain potential response that occurs
+following performance errors in a speeded reaction time task
+usually 25–75 ms after the response [80]. Previous work [81]
+indicates that there is increased coordination between the lateral
+prefrontal cortex (lPFC) and medial prefrontal cortex (mPFC)
+within the theta frequency band (4-8 Hz) and ERN time window.
+EEG data from 63-channels was collected in accordance with
+the 10/20 system on a Neuroscan Synamps2 system (Neuroscan,
+Inc.) sampled at 128 Hz from 91 subjects. Full methodological
+details of the recording are available in the previous report [80].
+The task was a common speeded-response letter (H/S) flanker,
+where error and correct response-locked trials from each subject were utilized. A random subset of correct trials was selected, to equate the number of error relative to correct trials for
+each participant. The EEG data are pre-processed by the spherical spline current source density (CSD) waveforms to sharpen
+event-related potential (ERP) scalp topographies and reduce
+volume conduction [82]. The CSD has fewer assumptions than
+many inverse transforms, attenuates volume conduction, and
+represents independent sources near the cortical surface [83].
+For each subject and response type, the pairwise phase locking
+value in the theta frequency band was computed as described
+in (8) [70]. We constructed 3-way tensors at each time point
+Xt ∈ R63×63×91 for both ERN and CRN data separately where
+the first and second mode represent the adjacency matrix of the
+connectivity graphs while the third mode corresponds to the
+subjects for t ∈ {1, 2, . . . , 256}.
+In this section, the method described in Section III is applied
+to tensors constructed from the connectivity networks as described in Section II-C. The connectivity networks corresponding to the first 10 time points t ∈ {1, 2, . . . , 10} and all subjects
+was used in the training step to obtain initial subspace information of the low-rank component Lt . This training data is used to
+obtain an initial subspace estimate and 10 time points approximately correspond to 78 ms of data. It is assumed that during
+this time period the connectivity networks are almost stationary
+and the low-rank structure does not change significantly. Then
+the proposed approach was applied to the remaining time points
+with α = 8 and σmin = 0.11. Since the connectivity networks
+constructed by the phase synchrony measure are symmetric,
+(1)
+(2)
+the basis matrices Pt and Pt corresponding to the first two
+(1)
+(2)
+modes are identical to each other as Pt = Pt for each time
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+677
+
+Fig. 2. Average of (a) ERN and (b) CRN waveforms and the detected change
+points corresponding to the connectivity mode.
+
+point t. This is due to the fact that the unfolding of the 3mode tensor along modes 1 and 2 yield identical matrices with
+identical subspaces and does not change the general algorithm
+introduced in Section III.
+In Fig. 2, change points corresponding to the connectivity
+(1)
+mode Lt are given. It can be seen that for ERN networks there
+is an interval (−109, 141) ms corresponding to the response time
+and the ERN response. There is also a longer interval (141, 766)
+ms corresponding to the Pe, the error-related positivity which
+usually occurs 200–500 ms after making an incorrect response,
+following the error negativity (ERN). Similar time intervals are
+obtained for CRN, with the biggest difference being a longer
+time interval around the response time as the physiological response for CRN is not as pronounced as the one for ERN.
+In order to better interpret the network structure corresponding to different time intervals, FCCA reviewed in
+Section II-D was applied to the sets of 63 × 63 networks obtained from low-rank tensors Lˆt ∈ R63×63×91 within
+each time interval (pre-ERN, ERN, post-ERN, pre-CRN,
+CRN, post-CRN) where (# of input adjacency matrices) =
+(# of subjects) × (# time points in the interval). As seen in
+Fig. 3, the network structure in pre-ERN interval is similar to
+the network structure of the post-ERN interval, while the identified modules are more segregated in the ERN interval relative
+to the pre and post-ERN. This is in line with previous results
+indicating that separable clusters are apparent relative to left and
+right motor areas, and left and right lateral-PFC regions during
+ERN [34]. For the CRN clusters, we observed that segregation
+of the lateral and central areas is quite limited with one large
+fronto-central cluster present during all CRN intervals. The exception are small frontal- and central clusters during the CRN (a
+similar two were observed during the ERN). This is consistent
+with the idea that medial frontal regions are activated during
+correct trials, but to a smaller extent than during errors.
+To show the denoising performance of the proposed method
+compared to HoSVD, we applied HoSVD to the EEG networks with the same α and σmin values used in Ho-RLSL. First,
+HoSVD detected pre-ERN, ERN and post-ERN intervals very
+similar to the ones obtained from Ho-RLSL (see Table V). The
+
+Fig. 3. Network structures for the low-rank components of ERN networks
+obtained by Ho-RLSL: (a) pre-ERN, (b) ERN, (c) post-ERN.
+TABLE V
+DETECTED ERN AND CRN INTERVALS BY HO-RLSL AND HOSVD
+Interval
+
+Ho-RLSL
+
+HoSVD
+
+Pre-ERN
+ERN
+Post-ERN
+Pre-CRN
+CRN
+Post-CRN
+
+−0.484 to −0.109 ms
+−0.109 to 0.141 ms
+0.141 to 0.766 ms
+−0.422 to −0.047 ms
+−0.047 to 0.391 ms
+0.391 to 0.641 ms
+
+−0.484 to −0.047 ms
+−0.047 to 0.141 ms
+0.141 to 0.766 ms
+−0.734 to −0.109ms
+−0.109 to 0.141 ms
+0.141 to 0.391 ms
+
+Fig. 4. Network structures for the low-rank components of CRN networks
+determined obtained by Ho-RLSL: (a) pre-CRN, (b) CRN, (c) post-CRN.
+
+change point at the end of the pre-ERN interval was shifted by
+α time points. We then used FCCA to identify the common network structure for each interval (Fig. 5). As seen in Figs. 3 and
+5, both HoSVD and Ho-RLSL yield the same network structure
+for the ERN interval, while HoSVD yields more noisy networks for pre- and post-ERN intervals. When the physiological
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+678
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+Fig. 5. Network structures for the low-rank components of ERN networks
+obtained by HoSVD: (a) pre-ERN, (b) ERN, (c) post-ERN.
+
+response is strong such as during the ERN, the network is less
+noisy yielding the exact cluster structure both for Ho-RLSL and
+HoSVD. However, when the networks are noisier such as for
+the pre-ERN interval, our algorithm provides a cleaner low-rank
+approximation which yields more distinct cluster structures. For
+CRN networks, Ho-RLSL and HoSVD detected very different
+pre-CRN, CRN and post-CRN intervals (see Table V), and we
+cannot compare the network structures obtained from both algorithms. In particular, HoSVD detects a very long pre-CRN
+time interval and very short CRN and post-CRN intervals. The
+CRN and post-CRN intervals detected by Ho-RLSL align better
+with well-known ERPs such as P300.
+V. CONCLUSION
+In this paper, we introduced a new recursive low-rank + sparse
+structure learning algorithm for tensor type data to track dynamic modular structure of functional connectivity networks
+constructed from EEG recordings across multiple subjects. To
+this aim, a recent subspace tracking approach, REPROCS, was
+adapted and extended to tensor type data. This extension offers several novelties with respect to the original algorithm. In
+original REPROCS, the measurements at each time point are
+vectors and the algorithm uses the fact that each measurement
+vector is coming from a low-rank subspace. However, in our
+case, low-rank corresponds to a low Tucker rank, i.e. the matricized version of the tensor along each mode is a low-rank
+matrix implying it can be reconstructed through the outer product of a small number of eigenvectors. This is particularly suitable for dealing with data that has a modular structure such as
+FCNs. Using REPROCS to analyze this type of dataset would
+require vectorization which breaks the intrinsic low-rank structure of each measurement along with increased computational
+complexity. The proposed approach yields robust estimation of
+the low-rank component of a dynamic 3-way tensor at each
+time point and provides a recursive way to update the subspace
+
+information. This approach identifies the time points where the
+low-rank subspaces change and recursively updates these subspaces to improve the low-rank approximation to data. The proposed approach is first applied to a set of simulated networks for
+performance evaluation, and is then used to separate low-rank
+and sparse parts of dFCNs across multiple subjects. Low-rank
+component of dFCNs obtained for the detected time intervals are
+summarized by using a recently introduced multiple graph clustering approach, FCCA. The low-rank subspace approximation
+to each time interval provides a denoised version of the original
+network, thus improving the quality of the clustering results.
+The results indicate a clear change in the community structure
+before and after the physiological response. Moreover, the detected community structures are in line with previous hypothesis
+regarding the networks involved in cognitive control [81].
+One main concern about the proposed algorithm is the selection of parameters α and σmin . Both α and σmin are datadependent parameters and their selection requires some a priori
+information. First, α should be smaller than the time interval
+between two consecutive change points in order to identify each
+one of them. For example, in our simulations change points appear at t = 40 and t = 60 and there are 20 time points between
+consecutive change points. We selected α as 5 in our simulations and we identified the change points correctly. When we
+apply our algorithm with α = 10 we can still identify the change
+points. However, if we select α = 30, we identify the first change
+point at t = 60 which corresponds to the beginning of the third
+interval. Therefore, the subspace estimate is based on the information from the second time interval and cannot do a good
+job of representing the third time interval and the algorithm
+fails. Moreover, if we keep α very small, then the algorithm will
+be more susceptible to instantaneous noise and we will have
+a lot of incorrect change points or false positives. For the real
+dataset, since we know something about the dynamics of EEG,
+we selected α to be at least as long as the duration of ERNs
+(50–75 ms) with α = 8. Selection of σmin is also dependent on
+the datasets. For example, in our simulations, we selected σmin
+as 10% of the maximum eigenvalue. If we select it too small,
+the algorithm includes many basis vectors which correspond to
+noise and both the low-rank assumption and the algorithm fail.
+If we select σmin too high, then the algorithm does not update the
+low-rank subspace for the slow changes and the algorithm again
+fails. Selecting σmin for real dataset is more difficult, because
+gaps between eigenvalues may not be very clear. For example,
+for our EEG datasets, the first eigenvalue was much larger than
+the others and using a threshold around 10% of the maximum
+eigenvalue did not work. In this case, we chose σmin = 0.11
+empirically. If we select it lower, the algorithm includes many
+basis vectors at every time window which cause the algorithm to
+fail. When we increased σmin , we lost a lot of the change points.
+Future work will consider extending the proposed approach
+to higher order tensors by including various experimental conditions, different frequency bands and multiple modalities. Future
+work will also consider extensions of linear low-rank subspace
+models to unions of subspaces or manifolds. Modifications to
+the Ho-RLSL algorithm such as predicting support of the sparse
+component [32] or using partial subspace knowledge for the
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+low-rank component [84] will further improve the performance
+of Ho-RLSL.
+APPENDIX
+A. βt Is Small
+In this section, we will prove that βt is small and that (14)
+can be treated as a sparse recovery in noise problem. Define the
+subspace estimation error for ith mode as
+(i)
+
+(i)
+
+(i)
+
+,(i)
+
+SE(P , P̂ ) := (I − P̂ P̂
+(i)
+
+(i)
+
+)P
+
+F = i ,
+
+(16)
+
+3) Define γ∗ = mink ∈{1, 2, 3} (γ∗,k
+sume that  Lt F ≤ γ∗ .
+
+(1)
+
+ βt F =  Lt ×1 φ t
+
+(i)
+
+(1)
+
+(2)
+
+(3)
+
++ A2 ×1 Pj,new ×2 Pj −1 ×3 Pj −1
+
+(1)
+
+(2)
+
+(3)
+
+(1)
+
+(2)
+
+(3)
+
+(1)
+
+(2)
+
+(3)
+
+(1)
+
+(2)
+
+(3)
+
+(1)
+
+(2)
+
+(3)
+
++ 1 ||A7 ||F + ||At,new ||F .
+
++ A6 ×1 Pj,new ×2 Pj −1 ×3 Pj,new
++ A7 ×1 Pj −1 ×2 Pj,new ×3 Pj,new
+
+From Section VI-B:
+
+(1)
+(2)
+(3)
+ A2 F ≤ γ∗ rank(Pj,new )rank(Pj −1 )rank(Pj −1 )
+..
+(20)
+. 
+
+(17)
+
+,(3)
+
+,(1)
+
+,(2)
+
+,(3)
+
+,(1)
+
+,(2)
+
+,(3)
+
+,(1)
+
+,(2)
+
+,(3)
+
+||At,new ||F ≤ N̄ · γ̄new,1 .
+
+A4 = Lt ×1 Pj −1 ×2 Pj −1 ×3 Pj,new
+
+A6 = Lt ×1 Pj,new ×2 Pj −1 ×3 Pj,new
+
+2 3 ||A2 ||F
+
+,(1)
+,(2)
+,(3)
+A7 = Lt ×1 Pj −1 ×2 Pj,new ×3 Pj,new
+,(1)
+
+,(2)
+
+,(3)
+
+(18)
+
+Assumptions:
+1) Assume that subspace estimation error is i = (I −
+(i)
+1.
+P̂(i) P̂,(i) )P(i) F ≤ r0 ζ for ζ
+(k )
+2) Let li be the ith column of Lt,(k ) and assume that 
+(k )
+
+li
+
+F ≤ γ∗,k , γ∗,k ≤  1 ( k ) and γnew,k << γ∗,k .
+ζ rJ
+
+(21)
+
+(22)
+
+3) Cross terms:
+
+A5 = Lt ×1 Pj,new ×2 Pj,new ×3 Pj −1
+
+At,new = A8 = Lt ×1 Pj,new ×2 Pj,new ×3 Pj,new .
+
+≤ (r̄j −1 ζ)3 · N̄ · γ̄∗
+
+2) Last term:
+
+,(1)
+,(2)
+,(3)
+A3 = Lt ×1 Pj −1 ×2 Pj,new ×3 Pj −1
+,(3)
+
+(3)
+
+≤ N̄ · ζ 5/2 · (r̄j −1 )2 .
+
+A2 = Lt ×1 Pj,new ×2 Pj −1 ×3 Pj −1
+
+,(2)
+
+(2)
+
+1
+≤ (r̄j −1 ζ)3 · N̄ · √
+ζ r̄J
+
+At,∗ = A1 = Lt ×1 Pj −1 ×2 Pj −1 ×3 Pj −1
+
+,(1)
+
+(1)
+
+rank(Pj −1 )rank(Pj,new )rank(Pj,new )
+
+1 2 3 ||At,∗ ||F
+
+where we redefine the old and new parts of the projection as
+,(2)
+
+(19)
+
+Let N̄ = maxi (Ni ), r̄J = maxi (rJ ) and γ¯∗ = maxk (γ∗,k ) ·
+N̄ where γ̄∗ > γ∗ . Define γ̄new = maxk (γnew,k ) and assume that
+γ̄∗ .
+γ̄new
+Note that;
+1) First term:
+
++ A5 ×1 Pj,new ×2 Pj,new ×3 Pj −1
+
+,(1)
+
+F
+
+(i)
+
++ A4 ×1 Pj −1 ×2 Pj −1 ×3 Pj,new
+
++ A8 ×1 Pj,new ×2 Pj,new ×3 Pj,new
+
+(3)
+
+×3 φ t
+
++ 3 ||A5 ||F + 2 ||A6 ||F
+
+ A7 F ≤ γ∗
+
+(1)
+(2)
+(3)
++ A3 ×1 Pj −1 ×2 Pj,new ×3 Pj −1
+
+(2)
+
+×2 φ t
+
++ 1 3 ||A3 ||F + 1 2 ||A4 ||F
+
+(i)
+
+(1)
+(2)
+(3)
+Lt = A1 ×1 Pj −1 ×2 Pj −1 ×3 Pj −1
+
+3
+i=1,i =k Ni ) and as-
+
+≤ 1 2 3 ||At,∗ ||F + 2 3 ||A2 ||F
+
+where P and P̂ are true and estimated basis
+ matrices of
+(i)
+(i)
+(i)
+(i)
+the ith mode, respectively. Pj = Pj −1 Pj,new where Pj,new
+(i)
+
+
+
+
+3
+4) Define γnew = mink ∈{1, 2, 3} (γnew,k
+i=1,i =k Ni ) and
+assume that γnew
+γ∗ .
+(1)
+(2)
+(3)
+βt is defined as βt = Lt ×1 φ t ×2 φ t ×3 φ t where
+(i)
+(i)
+(i)
+φ t = I − P̂t−1 (P̂t−1 ) and its norm is:
+
+(i)
+
+is a ni × cj,new basis matrix with (Pj,new ) Pj −1 = 0. Since
+the low-rank tensor at time t, Lt , has components Am s with
+m ∈ {1, 2, . . . , 8} which are the projections of Lt in both
+(i)
+(i)
+the previous subspace Pj −1 s and Pj,new s. Therefore, Lt can be
+written as the sum of these components:
+
+679
+
+≤ (r̄j −1 ζ)2 · γ̄∗
+
+
+
+r̄j,new r̄j −1 r̄j −1
+
+
+1
+≤ N̄ · (r̄j −1 ζ)2 · √
+r̄j −1 r̄j,new
+ζ r̄J
+≤ N̄ · ζ 3/2 · (r̄j −1 )2 · (r̄j,new )1/2 .
+
+r̄j,new r̄j,new r̄j −1
+3 ||A5 ||F ≤ (r̄j −1 ζ) · γ̄∗
+≤ N̄ · (r̄j −1 ζ) · √
+
+(23)
+
+
+1
+r̄j,new r̄j −1
+ζ r̄J
+
+≤ N̄ · ζ 1/2 · (r̄j −1 )1/2 · r̄j,new .
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+(24)
+
+680
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+Therefore;
+ βt F ≤ N̄ · ζ
+
+5/2
+
+2
+
+· (r̄j −1 ) + 3 · N̄ · ζ
+
+3/2
+
+2
+
+1/2
+
+· (r̄j −1 ) ·(r̄j,new )
+
++ 3 · N̄ · ζ 1/2 · (r̄j −1 )1/2 · r̄j,new + N̄ · γ̄new .
+(−4)
+
+ βt F ≤ N̄ · ζ 1/2 · γ̄∗
+
+(−2)
+
++ 3 · N̄ · ζ 1/2 · (r̄j −1 )1 · γ̄∗
+(−1)
+
+· (r̄j,new )1/2 + 3 · N̄ · γ̄∗
+
+· r̄j,new + N̄ · γ̄new .
+(25)
+
+Since ζ is small and γ̄∗ is large, the last term is dominant in
+the upper bound. Thus, βt can be considered as a noise by the
+slow subspace change assumption  γnew F  St F .
+B. Upper bound for Frobenious Norm of Cross Terms
+Upper bound for the norm of the cross terms is derived as
+follows:
+,(1)
+
+,(2)
+
+,(3)
+
+ At,2 F =  Lt ×1 Pj,new ×2 Pj −1 ×3 Pj −1 F
+,(1)
+
+(3)
+
+(2)
+
+≤  Pj,new Lt,(1) F ·  Pj −1 ⊗ Pj −1 F
+
+(1)
+≤ rj,new · γ∗
+ 
+
+,(3)
+,(2)
+(3)
+(2)
+· tr (Pj −1 ⊗ Pj −1 )(Pj −1 ⊗ Pj −1 )
+=
+
+
+(1)
+rj,new · γ∗
+ 
+
+
+,(3) (3)
+,(2) (2)
+tr (Pj −1 Pj −1 ) ⊗ (Pj −1 Pj −1 )
+
+·
+
+=
+
+
+
+(1)
+
+rj,new · γ∗ ·
+ 
+
+
+
+
+,(3) (3)
+,(2) (2)
+tr (Pj −1 Pj −1 ) · tr (Pj −1 Pj −1 )
+
+= γ∗
+
+
+
+(1)
+
+(2)
+
+(3)
+
+rj,new rj −1 rj −1 .
+
+(26)
+
+REFERENCES
+[1] M. Steriade et al., “Basic mechanisms of cerebral rhythmic activities,”
+Electroencephalogr. Clin. Neurophysiol., vol. 76, no. 6, pp. 481–508,
+1990.
+[2] S. L. Bressler, “Large-scale cortical networks and cognition,” Brain Res.
+Rev., vol. 20, no. 3, pp. 288–304, 1995.
+[3] F. Varela et al., “The brainweb: Phase synchronization and largescale integration,” Nature Rev. Neurosci., vol. 2, no. 4, pp. 229–239,
+2001.
+[4] C. J. Stam and J. C. Reijneveld, “Graph theoretical analysis of complex
+networks in the brain,” Nonlinear Biomed. Phys., vol. 1, no. 1, 2007, Art.
+no. 3.
+[5] E. T. Bullmore and D. S. Bassett, “Brain graphs: Graphical models of the
+human brain connectome,” Annu. Rev. Clin. Psychol., vol. 7, pp. 113–140,
+2011.
+[6] R. Prabhakaran et al., “An event-related FMRI investigation of
+phonological–lexical competition,” Neuropsychologia, vol. 44, no. 12,
+pp. 2209–2221, 2006.
+[7] R. Goebel et al., “Analysis of functional image analysis contest (FIAC)
+data with brainvoyager QX: From single-subject to cortically aligned
+group general linear model analysis and self-organizing group independent
+component analysis,” Human Brain Mapping, vol. 27, no. 5, pp. 392–401,
+2006.
+
+[8] P. Boveroux et al., “Breakdown of within-and between-network resting
+state functional magnetic resonance imaging connectivity during propofolinduced loss of consciousness,” Anesthesiology, vol. 113, no. 5, pp. 1038–
+1053, 2010.
+[9] J. Schrouff et al., “Brain functional integration decreases during propofolinduced loss of consciousness,” Neuroimage, vol. 57, no. 1, pp. 198–205,
+2011.
+[10] C. Chang and G. H. Glover, “Time–frequency dynamics of resting-state
+brain connectivity measured with FMRI,” Neuroimage, vol. 50, no. 1,
+pp. 81–98, 2010.
+[11] R. M. Hutchison et al., “Dynamic functional connectivity: Promise, issues,
+and interpretations,” Neuroimage, vol. 80, pp. 360–378, 2013.
+[12] F. Freyer et al., “Bistability and non-Gaussian fluctuations in spontaneous cortical activity,” J. Neurosci., vol. 29, no. 26, pp. 8512–8524,
+2009.
+[13] J. Tang et al., “Small-world behavior in time-varying graphs,” Phys. Rev.
+E, vol. 81, no. 5, 2010, Art. no. 055101.
+[14] P. Grindrod et al., “Communicability across evolving networks,” Phys.
+Rev. E, vol. 83, no. 4, 2011, Art. no. 046120.
+[15] M. Valencia et al., “Dynamic small-world behavior in functional brain
+networks unveiled by an event-related networks approach,” Phys. Rev. E,
+vol. 77, no. 5, 2008, Art. no. 050905.
+[16] F. D. Fallani et al., “Persistent patterns of interconnection in time-varying
+cortical networks estimated from high-resolution EEG recordings in humans during a simple motor act,” J. Phys. A, Math. Theor., vol. 41, no. 22,
+2008, Art. no. 050905.
+[17] E. A. Allen et al., “Tracking whole-brain connectivity dynamics in the
+resting state,” Cerebral Cortex, vol. 24, pp. 663–676, 2012.
+[18] S. Dimitriadis et al., “On the quantization of time-varying phase
+synchrony patterns into distinct functional connectivity microstates
+(fcμstates) in a multi-trial visual ERP paradigm,” Brain Topography,
+vol. 26, no. 3, pp. 397–409, 2013.
+[19] T. Koenig et al., “Millisecond by millisecond, year by year: Normative
+EEG microstates and developmental stages,” Neuroimage, vol. 16, no. 1,
+pp. 41–48, 2002.
+[20] S. Ma et al., “Dynamic changes of spatial functional network connectivity
+in healthy individuals and schizophrenia patients using independent vector
+analysis,” Neuro image, vol. 90, pp. 196–206, 2014.
+[21] R. F. Betzel et al., “Synchronization dynamics and evidence for a repertoire of network states in resting EEG,” Frontiers Comput. Neurosci.,
+vol. 6, 2012, Art. no. 74.
+[22] N. Leonardi et al., “Principal components of functional connectivity: A
+new approach to study dynamic brain connectivity during rest,” Neuro
+image, vol. 83, pp. 937–950, 2013.
+[23] S. Mehrkanoon et al., “Low-dimensional dynamics of resting-state cortical activity,” Brain Topography, vol. 27, no. 3, pp. 338–352, 2014.
+[24] A. Y. Mutlu et al., “A signal-processing-based approach to time-varying
+graph analysis for dynamic brain network identification,” Comput. Math.
+Methods Med., vol. 2012, 2012, Art. no. 451516.
+[25] N. Leonardi et al., “Disentangling dynamic networks: Separated and joint
+expressions of functional connectivity patterns in time,” Human Brain
+Mapping, vol. 35, no. 12, pp. 5984–5995, 2014.
+[26] I. Cribben et al., “Dynamic connectivity regression: Determining staterelated changes in brain connectivity,” Neuroimage, vol. 61, no. 4, pp. 907–
+920, 2012.
+[27] J. Zhang et al., “Inferring functional interaction and transition patterns
+via dynamic Bayesian variable partition models,” Human Brain Mapping,
+vol. 35, no. 7, pp. 3314–3331, 2014.
+[28] J. Ou et al., “Atomic dynamic functional interaction patterns for characterization of ADHD,” Human Brain Mapping, vol. 35, no. 10, pp. 5262–5278,
+2014.
+[29] E. Bullmore and O. Sporns, “Complex brain networks: Graph theoretical analysis of structural and functional systems,” Nature Rev. Neurosci.,
+vol. 10, no. 3, pp. 186–198, 2009.
+[30] I. Jolliffe, Principal Component Analysis. Hoboken, NJ, USA: Wiley,
+2002.
+[31] M. H. Law and A. K. Jain, “Incremental nonlinear dimensionality reduction by manifold learning,” IEEE Trans. Pattern Anal. Mach. Intell.,
+vol. 28, no. 3, pp. 377–391, Mar. 2006.
+[32] C. Qiu and N. Vaswani, “Automated recursive projected cs (reprocs) for
+real-time video layering,” Int. Conf. Comput. Vis. Pattern Recogn., CVPR,
+Citeseer, vol. 130, 2012.
+[33] D. Goldfarb and Z. Qin, “Robust low-rank tensor recovery: Models and
+algorithms,” SIAM J. Matrix Analysis Appl., vol. 35, no. 1, pp. 225–253,
+2014.
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+OZDEMIR et al.: RECURSIVE TENSOR SUBSPACE TRACKING FOR DYNAMIC BRAIN NETWORK ANALYSIS
+
+[34] A. Ozdemir et al., “Hierarchical spectral consensus clustering for group
+analysis of functional brain networks,” IEEE Trans. Bio-Med. Eng.,
+vol. 62, no. 9, pp. 2158–2169, 2015.
+[35] F. De La Torre and M. J. Black, “A framework for robust subspace learning,” Int. J. Comput. Vis., vol. 54, no. 1/3, pp. 117–142, 2003.
+[36] S. Roweis, “EM algorithms for PCA and SPCA,” in Proc. 1997 Conf. Adv.
+Neural Inf. Process. Syst., pp. 626–632, 1997.
+[37] E. J. Candès et al., “Robust principal component analysis?” J. ACM,
+vol. 58, no. 3, 2011, Art. no. 11.
+[38] V. Chandrasekaran et al., “Rank-sparsity incoherence for matrix decomposition,” SIAM J. Optim., vol. 21, no. 2, pp. 572–596, 2011.
+[39] T. Zhang and G. Lerman, “A novel m-estimator for robust PCA,” J. Mach.
+Learn. Res., vol. 15, no. 1, pp. 749–808, 2014.
+[40] M. McCoy et al., “Two proposals for robust PCA using semidefinite
+programming,” Electron. J. Statist., vol. 5, pp. 1123–1160, 2011.
+[41] H. Xu et al., “Robust PCA via outlier pursuit,” in Proc. Adv. Neural Inf.
+Process. Syst., 2010, pp. 2496–2504.
+[42] V. Chandrasekaran et al., “The convex geometry of linear inverse problems,” Found. Comput. Math., vol. 12, no. 6, pp. 805–849, 2012.
+[43] A. Ganesh et al., “Principal component pursuit with reduced linear measurements,” in Proc. IEEE Int. Symp. Inf. Theory, 2012,
+pp. 1281–1285.
+[44] G. Mateos and G. B. Giannakis, “Robust PCA as bilinear decomposition
+with outlier-sparsity regularization,” IEEE Trans. Signal Process., vol. 60,
+no. 10, pp. 5176–5190, Oct. 2012.
+[45] D. Hsu et al., “Robust matrix decomposition with sparse corruptions,”
+IEEE Trans. Inf. Theory, vol. 57, no. 11, pp. 7221–7234, Nov. 2011.
+[46] J. Wright et al., “Compressive principal component pursuit,” Inf. Inference, vol. 2, no. 1, pp. 32–68, 2013.
+[47] M. Tao and X. Yuan, “Recovering low-rank and sparse components of matrices from incomplete and noisy observations,” SIAM J. Optim., vol. 21,
+no. 1, pp. 57–81, 2011.
+[48] M. B. McCoy and J. A. Tropp, “Sharp recovery bounds for convex deconvolution, with applications,” Found. Comput. Math., vol. 14, pp. 503–567,
+2012.
+[49] M. Mardani et al., “Decentralized sparsity-regularized rank minimization:
+Algorithms and applications,” IEEE Trans. Signal Process., vol. 61, no. 21,
+pp. 5374–5388, Nov. 2013.
+[50] M. Mardani and G. Giannakis, “Robust network traffic estimation via
+sparsity and low rank,” in Proc. IEEE Int. Conf. Acoust. Speech Signal
+Process., 2013, pp. 4529–4533.
+[51] M. Mardani et al., “Recovery of low-rank plus compressed sparse matrices
+with application to unveiling traffic anomalies,” IEEE Trans. Inf. Theory,
+vol. 59, no. 8, pp. 5186–5205, Aug. 2013.
+[52] E. J. Candès and B. Recht, “Exact matrix completion via convex optimization,” Found. Comput. Math., vol. 9, no. 6, pp. 717–772, 2009.
+[53] A. Ganesh et al., “Fast algorithms for recovering a corrupted lowrank
+matrix,” in Proc. 3rd, IEEE, Int. Workshop Comput. Adv. Multi-Sensor
+Adapt. Process., 2009, pp. 213–216.
+[54] M. Brand, “Incremental singular value decomposition of uncertain data
+with missing values,” in Proc. 7th Eur. Conf. Comput. Vis., 2002, pp. 707–
+720.
+[55] D. Skocaj and A. Leonardis, “Weighted and robust incremental method
+for subspace learning,” in Proc. 9th IEEE Int. Conf. Comput. Vis., 2003,
+pp. 1494–1501.
+[56] Li et al., “An integrated algorithm of incremental and robust PCA,” in
+Proc. Int. Conf. Image Process., vol. 1, 2003, pp. I–245.
+[57] J. He et al., “Incremental gradient on the grassmannian for online foreground and background separation in subsampled video,” in Proc. IEEE
+Conf. Comput. Vis. Pattern Recogn., 2012, pp. 1568–1575.
+[58] Y. Chi et al., “Petrels: Parallel subspace estimation and tracking by
+recursive least squares from partial observations,” IEEE Trans. Signal
+Process., vol. 61, no. 23, pp. 5947–5959, Dec. 2013.
+[59] C. Qiu et al., “Recursive robust PCA or recursive sparse recovery in
+large but structured noise,” in Proc. IEEE Int. Conf. Acoust. Speech Signal
+Process., 2013, pp. 5954–5958.
+[60] C. Qiu and N. Vaswani, “Recursive sparse recovery in large but structured
+noise: Part 2,” in Proc. IEEE Int. Symp. Inf. Theory, 2013, pp. 864–868.
+[61] H. Guo et al., “An online algorithm for separating sparse and lowdimensional signal sequences from their sum,” IEEE Trans. Signal Process., vol. 62, no. 16, pp. 4284–4297, Aug. 2014.
+[62] J. Sun et al., “Beyond streams and graphs: Dynamic tensor analysis,”
+in Proc. 12th ACM SIGKDD Int. Conf. Knowl. Discovery Data Mining,
+2006, pp. 374–383.
+
+681
+
+[63] J. Sun et al., “Window-based tensor analysis on high-dimensional and
+multi-aspect streams,” in Proc. 6th Int. Conf. Data Mining, vol. 6, 2006,
+pp. 1076–1080.
+[64] L. Li et al., “Robust tensor subspace learning for anomaly detection,” Int.
+J. Mach. Learn. Cybern., vol. 2, no. 2, pp. 89–98, 2011.
+[65] D. Nion and N. D. Sidiropoulos, “Adaptive algorithms to track the
+PARAFAC decomposition of a third-order tensor,” IEEE Trans. Signal
+Process., vol. 57, no. 6, pp. 2299–2310, Jun. 2009.
+[66] M. Mardani et al., “Subspace learning and imputation for streaming big
+data matrices and tensors,” IEEE Trans. Signal Process., vol. 63, no. 10,
+pp. 2663–2677, May 2015.
+[67] H. Kasai, “Online low-rank tensor subspace tracking from incomplete data
+by CP decomposition using recursive least squares,” in Proc. IEEE Int.
+Conf. Acoustics, Speech and Signal Process., 2016, pp. 2519–2523.
+[68] L. R. Tucker, “The extension of factor analysis to three-dimensional matrices,” Contrib. Math. Psychol., pp. 109–127, 1964.
+[69] L. De Lathauwer et al., “A multilinear singular value decomposition,”
+SIAM J. Matrix Anal. Appl., vol. 21, no. 4, pp. 1253–1278, 2000.
+[70] S. Aviyente et al., “A phase synchrony measure for quantifying dynamic
+functional integration in the brain,” Human Brain Mapping, vol. 32, no. 1,
+pp. 80–93, 2011.
+[71] S. Aviyente and A. Y. Mutlu, “A time-frequency-based approach to phase
+and phase synchrony estimation,” IEEE Trans. Signal Process., vol. 59,
+no. 7, pp. 3086–3098, Jul. 2011.
+[72] E. Rodriguez et al., “Perception’s shadow: Long-distance synchronization
+of human brain activity,” Nature, vol. 397, no. 6718, pp. 430–433, 1999.
+[73] A. Rihaczek, “Signal energy distribution in time and frequency,” IEEE
+Trans. Inf. Theory, vol. IT-14, no. 3, pp. 369–274, May 1968.
+[74] D. Meunier et al., “Hierarchical modularity in human brain functional
+networks,” Frontiers Neuroinf., vol. 3, 2009, Art. no. 37.
+[75] D. Meunier et al., “Age-related changes in modular organization of human
+brain functional networks,” Neuroimage, vol. 44, no. 3, pp. 715–723, 2009.
+[76] M. Holzrichter and S. Oliveira, “A graph based method for generating
+the fiedler vector of irregular problems,” in Proc. 11th IPPS/SPDP’99
+Workshops Held Conjunction 13th Int. Parallel Process. Symp. 10th Symp.
+Parallel Distrib. Process., 1999, pp. 978–985.
+[77] S. Friedland et al., “Compressive sensing of sparse tensors,” IEEE Trans.
+Image Process., vol. 23, no. 10, pp. 4438–4447, Oct. 2014.
+[78] L. De Lathauwer et al., “On the best rank-1 and rank-(R1 , R2 ,..., RN ) approximation of higher-order tensors,” SIAM J. Matrix Anal. Appl., vol. 21,
+no. 4, pp. 1324–1342, 2000.
+[79] M. Rubinov and O. Sporns, “Complex network measures of brain connectivity: Uses and interpretations,” Neuroimage, vol. 52, no. 3, pp. 1059–
+1069, 2010.
+[80] J. R. Hall et al., “Externalizing psychopathology and the error-related
+negativity,” Psychological Sci., vol. 18, no. 4, pp. 326–333, 2007.
+[81] J. F. Cavanagh et al., “Prelude to and resolution of an error: EEG phase
+synchrony reveals cognitive control dynamics during action monitoring,”
+J. Neurosci., vol. 29, no. 1, pp. 98–105, 2009.
+[82] J. Kayser and C. E. Tenke, “Principal components analysis of Laplacian
+waveforms as a generic method for identifying ERP generator patterns: II.
+Adequacy of low-density estimates,” Clin. Neurophysiol., vol. 117, no. 2,
+pp. 369–380, 2006.
+[83] C. E. Tenke and J. Kayser, “Generator localization by current source
+density (CSD): Implications of volume conduction and field closure at
+intracranial and scalp resolutions,” Clin. Neurophysiol., vol. 123, no. 12,
+pp. 2328–2345, 2012.
+[84] J. Zhan and N. Vaswani, “Robust PCA with partial subspace knowledge,”
+in Proc. IEEE Int. Symp. Inf. Theory, 2014, pp. 2192–2196.
+
+Alp Ozdemir received the B.S. degree in electrical
+and electronics engineering from Bogazici University, Istanbul, Turkey, in 2011 and the M.S. degree in
+biomedical engineering from the same university in
+2013. He is currently working toward the Ph.D. degree in electrical and computer engineering at Michigan State University, East Lansing, MI, USA. His
+research focuses on signal processing, image processing, and machine learning with applications to
+tensors.
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+682
+
+IEEE TRANSACTIONS ON SIGNAL AND INFORMATION PROCESSING OVER NETWORKS, VOL. 3, NO. 4, DECEMBER 2017
+
+Edward M. Bernat received the Ph.D. degree in clinical psychology from the University of Michigan,
+Ann Arbor, MI, USA, where he also completed an
+APA-accredited internship and postdoctoral work in
+biomedical engineering. He subsequently served as a
+Research Associate in clinical psychology at the University of Minnesota and then core faculty in Clinical
+Psychology at Florida State University. He joined the
+Psychology Faculty at the University of Maryland,
+College Park, MD, USA, in 2013.
+
+Selin Aviyente received the B.S. (Hons.) degree in
+electrical and electronics engineering from Bogazici
+University, Istanbul, Turkey, in 1997. She received
+the M.S. and Ph.D. degrees both in electrical engineering: systems from the University of Michigan,
+Ann Arbor, MI, USA, in 1999 and 2002, respectively. She is currently a Professor in the Department
+of Electrical and Computer Engineering, Michigan
+State University. Her research focuses on statistical
+signal processing, in particular nonstationary signal
+analysis, with applications to biological signals. Her
+most recent work focuses on the study of the dynamic functional networks
+in the brain using EEG and fMRI. She received the 2005 Withrow Teaching
+Excellence Award and the 2008 NSF CAREER Award. She was the Special
+Session Organizer for IEEE Statistical Signal Processing Workshop in 2012
+and the Technical Area Chair for Biomedical Image and Signal Processing for
+Asilomar Conference in 2014. She is currently a Senior Area Editor for IEEE
+TRANSACTIONS ON SIGNAL PROCESSING.
+
+Authorized licensed use limited to: Vrije Universiteit Brussel. Downloaded on March 30,2026 at 14:39:29 UTC from IEEE Xplore. Restrictions apply.
+
+
