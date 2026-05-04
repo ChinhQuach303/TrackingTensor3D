@@ -3,7 +3,7 @@ from pathlib import Path
 # ==========================================
 # 📂 DIRECTORY STRUCTURE
 # ==========================================
-BASE_PATH = Path("/home/chinh303/Downloads/ERN Raw Data BIDS-Compatible")
+BASE_PATH = Path("/home/chinh303/code/tensortracking/TrackingTensor3D")
 DATA_RAW = BASE_PATH
 DATA_PROCESSED = BASE_PATH / "data" / "processed"
 

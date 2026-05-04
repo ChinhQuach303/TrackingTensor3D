@@ -9,7 +9,7 @@ def rid_rihaczek_gpu(signal_tensor):
     n_trials, n_points = signal_tensor.shape
     device = signal_tensor.device
     
-    tau = torch.arange(-n_points // 2, n_points // 2, device=device)
+    tau = torch.arange(-n_points // 2, n_points // 2, device=device, dtype=torch.float32)
     theta = torch.fft.fftfreq(n_points, d=1.0, device=device) * 2 * np.pi
     
     THETA, TAU = torch.meshgrid(theta, tau, indexing='ij')
@@ -20,7 +20,7 @@ def rid_rihaczek_gpu(signal_tensor):
     # Ambiguity Function via Cyclic Autocorrelation
     AF = torch.zeros((n_trials, n_points, n_points), dtype=torch.complex64, device=device)
     for i, t in enumerate(tau):
-        sh = t.item()
+        sh = int(t.item())
         if sh >= 0:
             R = signal_tensor[:, sh:] * torch.conj(signal_tensor[:, :n_points-sh])
             AF[:, :, i] = torch.nn.functional.pad(R, (0, int(abs(sh))))
