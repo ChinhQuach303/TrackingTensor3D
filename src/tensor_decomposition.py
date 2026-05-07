@@ -5,12 +5,12 @@ import mne
 from config import *
 
 class HORLSDecomposer:
-    def __init__(self, n_nodes, n_subs, r=5, alpha=8.0, sigma=0.11, device='cpu'):
+    def __init__(self, n_nodes, n_subs, r=5, alpha_win=8, sigma_min=0.11, device='cpu'):
         self.N = n_nodes
         self.S = n_subs
         self.r = r  # Tucker rank
-        self.alpha = alpha
-        self.sigma = sigma
+        self.alpha = alpha_win  # Window size for updates
+        self.sigma_min = sigma_min  # Threshold for adding/deleting directions
         self.device = device
         
         # Subspaces for Channel (U) and Subject (V)
@@ -38,11 +38,38 @@ class HORLSDecomposer:
         
         return self.U, self.V
 
+    def update_subspace(self, data_window):
+        """
+        BƯỚC B: Add/Delete Directions (Trái tim của HO-RLSL).
+        Cập nhật Subspace dựa trên dữ liệu mới lọt ra ngoài không gian cũ.
+        """
+        # 1. Chiếu dữ liệu lên phần bù vuông góc (Orthogonal Complement)
+        # proj_perp = (I - UU')
+        eye_n = torch.eye(self.N, device=self.device)
+        proj_perp = eye_n - torch.matmul(self.U, self.U.T)
+        
+        # Unfold window dữ liệu theo mode Channel
+        # data_window shape: (S, N, N, alpha)
+        flat_data = data_window.permute(1, 0, 2, 3).reshape(self.N, -1)
+        projected_data = torch.matmul(proj_perp, flat_data)
+        
+        # 2. Tìm các hướng mới (Add Direction) từ phần dữ liệu "lọt lưới"
+        u_new, s_new, _ = torch.svd(projected_data)
+        
+        # Lấy các hướng có năng lượng vượt ngưỡng sigma_min
+        added_indices = torch.where(s_new > self.sigma_min * s_new[0])[0]
+        if len(added_indices) > 0:
+            new_directions = u_new[:, added_indices]
+            # Hợp nhất Subspace cũ và mới, sau đó trực giao hóa lại (QR decomposition)
+            combined = torch.cat([self.U, new_directions], dim=1)
+            q, _ = torch.linalg.qr(combined)
+            self.U = q[:, :self.r] # Duy trì rank r tối ưu
+            
     def decompose(self, tensor_4d):
         n_subs, n_chan, _, n_times = tensor_4d.shape
         
-        # Tucker Initialization
-        U, V = self.tucker_init(tensor_4d, n_init=10)
+        # Tucker Initialization (Baseline)
+        self.tucker_init(tensor_4d, n_init=10)
         
         energy = torch.zeros(n_times, device=self.device)
         weights_evolution = torch.zeros((n_chan, n_times), device=self.device)
@@ -51,23 +78,18 @@ class HORLSDecomposer:
             # X_t: Tensor 3 chiều tại thời điểm t (S, N, N)
             X_t = tensor_4d[:, :, :, t].to(self.device)
             
-            # --- Tucker Projection (Core Tensor Energy) ---
-            # core = X_t x1 U.T x2 U.T x3 V.T
-            # Tính toán tối ưu qua tensordot
-            temp = torch.tensordot(X_t, U, dims=([1], [0])) # (S, N, r)
-            temp = torch.tensordot(temp, U, dims=([1], [0])) # (S, r, r)
-            core = torch.tensordot(temp, V, dims=([0], [0])) # (r, r, r)
+            # --- BƯỚC A: Tucker Projection (Core Tensor Energy) ---
+            temp = torch.tensordot(X_t, self.U, dims=([1], [0])) # (S, N, r)
+            temp = torch.tensordot(temp, self.U, dims=([1], [0])) # (S, r, r)
+            core = torch.tensordot(temp, self.V, dims=([0], [0])) # (r, r, r)
             
-            # Lưu năng lượng của core tensor (tương đương Network Energy trong bài báo)
             energy[t] = torch.norm(core)**2
+            weights_evolution[:, t] = self.U[:, 0] # Lưu hướng dominant
             
-            # Lưu lại vector trọng số chính (dominant spatial pattern) để vẽ heatmap
-            # Lấy vector riêng lớn nhất của lát cắt không gian
-            weights_evolution[:, t] = U[:, 0] 
-            
-            # Ghi chú: Ở phiên bản đầy đủ, U và V sẽ được cập nhật đệ quy (Recursive Update)
-            # bằng thuật toán HO-RLSL. Ở đây chúng ta tập trung vào việc chiếu dữ liệu 
-            # 3D lên Subspace đã khởi tạo để tìm Change Points.
+            # --- BƯỚC B: Recursive Update (Cập nhật Subspace mỗi alpha bước) ---
+            if t > 0 and t % self.alpha == 0:
+                window = tensor_4d[:, :, :, t-self.alpha : t].to(self.device)
+                self.update_subspace(window)
 
         return weights_evolution.cpu().numpy(), energy.cpu().numpy()
 
