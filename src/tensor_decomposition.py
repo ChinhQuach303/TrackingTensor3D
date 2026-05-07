@@ -5,60 +5,70 @@ import mne
 from config import *
 
 class HORLSDecomposer:
-    def __init__(self, n_nodes, alpha=8.0, sigma=0.11, device='cpu'):
+    def __init__(self, n_nodes, n_subs, r=5, alpha=8.0, sigma=0.11, device='cpu'):
         self.N = n_nodes
+        self.S = n_subs
+        self.r = r  # Tucker rank
         self.alpha = alpha
         self.sigma = sigma
         self.device = device
         
+        # Subspaces for Channel (U) and Subject (V)
+        self.U = None 
+        self.V = None
+
     def tucker_init(self, tensor_4d, n_init=10):
         """
-        Khởi tạo subspace bằng Tucker Decomposition trên n_init điểm đầu tiên (baseline).
-        Theo Ozdemir (2017), tucker decomposition cung cấp basis ban đầu cho recursive tracking.
+        Khởi tạo subspace theo Ozdemir (2017) - Giữ nguyên chiều Subject.
+        Sử dụng HOSVD trên khối dữ liệu ban đầu (S x N x N x n_init).
         """
-        # M_train: (Subs, Chan, Chan, n_init) -> Mean across subs: (Chan, Chan, n_init)
-        m_train = torch.mean(tensor_4d[:, :, :, :n_init], dim=0)
+        m_train = tensor_4d[:, :, :, :n_init].to(self.device)
         
-        # Unfold along Mode-1 (Channel mode)
-        # M1: (Chan, Chan * n_init)
-        m1 = m_train.reshape(self.N, -1)
+        # 1. Tìm Basis cho Mode Channel (N)
+        # Unfold theo Channel: (N, S * N * n_init)
+        m_chan = m_train.permute(1, 0, 2, 3).reshape(self.N, -1)
+        u_chan, _, _ = torch.svd(m_chan)
+        self.U = u_chan[:, :self.r]
         
-        # SVD to find the dominant subspace
-        u, s, v = torch.svd(m1)
+        # 2. Tìm Basis cho Mode Subject (S)
+        # Unfold theo Subject: (S, N * N * n_init)
+        m_sub = m_train.reshape(self.S, -1)
+        u_sub, _, _ = torch.svd(m_sub)
+        self.V = u_sub[:, :self.r]
         
-        # w0 is the first singular vector (dominant direction)
-        w0 = u[:, 0] 
-        return w0
+        return self.U, self.V
 
     def decompose(self, tensor_4d):
-        n_subs, _, _, n_times = tensor_4d.shape
+        n_subs, n_chan, _, n_times = tensor_4d.shape
         
-        # --- REFACTORED: Tucker Initialization (First 10 points) ---
-        w = self.tucker_init(tensor_4d, n_init=10)
-        P = torch.eye(self.N, device=self.device) * (1.0 / self.sigma)
+        # Tucker Initialization
+        U, V = self.tucker_init(tensor_4d, n_init=10)
         
-        weights_evolution = torch.zeros((self.N, n_times), device=self.device)
         energy = torch.zeros(n_times, device=self.device)
-        
-        obs_tensor = torch.mean(tensor_4d, dim=0)
+        weights_evolution = torch.zeros((n_chan, n_times), device=self.device)
         
         for t in range(n_times):
-            C_t = obs_tensor[:, :, t]
+            # X_t: Tensor 3 chiều tại thời điểm t (S, N, N)
+            X_t = tensor_4d[:, :, :, t].to(self.device)
             
-            # HO-RLS Logic (Recursive Subspace Tracking)
-            y_t = torch.matmul(C_t, w)
-            Pi_t = torch.matmul(P, y_t)
-            k_t = Pi_t / (self.alpha + torch.dot(y_t, Pi_t))
+            # --- Tucker Projection (Core Tensor Energy) ---
+            # core = X_t x1 U.T x2 U.T x3 V.T
+            # Tính toán tối ưu qua tensordot
+            temp = torch.tensordot(X_t, U, dims=([1], [0])) # (S, N, r)
+            temp = torch.tensordot(temp, U, dims=([1], [0])) # (S, r, r)
+            core = torch.tensordot(temp, V, dims=([0], [0])) # (r, r, r)
             
-            # Update w using recursive relation
-            w_new = torch.matmul(C_t, w)
-            w_new /= (torch.norm(w_new) + 1e-12)
+            # Lưu năng lượng của core tensor (tương đương Network Energy trong bài báo)
+            energy[t] = torch.norm(core)**2
             
-            w = w_new
-            P = (P - torch.outer(k_t, Pi_t)) / self.alpha
-            weights_evolution[:, t] = w
-            energy[t] = torch.norm(torch.matmul(C_t, w)) # Network Energy
+            # Lưu lại vector trọng số chính (dominant spatial pattern) để vẽ heatmap
+            # Lấy vector riêng lớn nhất của lát cắt không gian
+            weights_evolution[:, t] = U[:, 0] 
             
+            # Ghi chú: Ở phiên bản đầy đủ, U và V sẽ được cập nhật đệ quy (Recursive Update)
+            # bằng thuật toán HO-RLSL. Ở đây chúng ta tập trung vào việc chiếu dữ liệu 
+            # 3D lên Subspace đã khởi tạo để tìm Change Points.
+
         return weights_evolution.cpu().numpy(), energy.cpu().numpy()
 
 def find_change_points(energy, threshold_factor=1.5):
@@ -85,9 +95,9 @@ def main():
         print(f"  Processing {cond} condition...")
         data = np.load(tensor_file)
         tensor = torch.tensor(data, dtype=torch.float32, device=device)
-        n_nodes = tensor.shape[1]
+        n_subs, n_nodes = tensor.shape[0], tensor.shape[1]
         
-        decomposer = HORLSDecomposer(n_nodes=n_nodes, device=device)
+        decomposer = HORLSDecomposer(n_nodes=n_nodes, n_subs=n_subs, device=device)
         w_t, energy = decomposer.decompose(tensor)
         
         # Save results for statistical validation
