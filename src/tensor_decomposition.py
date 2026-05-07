@@ -11,9 +11,30 @@ class HORLSDecomposer:
         self.sigma = sigma
         self.device = device
         
+    def tucker_init(self, tensor_4d, n_init=10):
+        """
+        Khởi tạo subspace bằng Tucker Decomposition trên n_init điểm đầu tiên (baseline).
+        Theo Ozdemir (2017), tucker decomposition cung cấp basis ban đầu cho recursive tracking.
+        """
+        # M_train: (Subs, Chan, Chan, n_init) -> Mean across subs: (Chan, Chan, n_init)
+        m_train = torch.mean(tensor_4d[:, :, :, :n_init], dim=0)
+        
+        # Unfold along Mode-1 (Channel mode)
+        # M1: (Chan, Chan * n_init)
+        m1 = m_train.reshape(self.N, -1)
+        
+        # SVD to find the dominant subspace
+        u, s, v = torch.svd(m1)
+        
+        # w0 is the first singular vector (dominant direction)
+        w0 = u[:, 0] 
+        return w0
+
     def decompose(self, tensor_4d):
         n_subs, _, _, n_times = tensor_4d.shape
-        w = torch.ones(self.N, device=self.device) / np.sqrt(self.N)
+        
+        # --- REFACTORED: Tucker Initialization (First 10 points) ---
+        w = self.tucker_init(tensor_4d, n_init=10)
         P = torch.eye(self.N, device=self.device) * (1.0 / self.sigma)
         
         weights_evolution = torch.zeros((self.N, n_times), device=self.device)
@@ -24,11 +45,12 @@ class HORLSDecomposer:
         for t in range(n_times):
             C_t = obs_tensor[:, :, t]
             
-            # HO-RLS Logic
+            # HO-RLS Logic (Recursive Subspace Tracking)
             y_t = torch.matmul(C_t, w)
             Pi_t = torch.matmul(P, y_t)
             k_t = Pi_t / (self.alpha + torch.dot(y_t, Pi_t))
             
+            # Update w using recursive relation
             w_new = torch.matmul(C_t, w)
             w_new /= (torch.norm(w_new) + 1e-12)
             

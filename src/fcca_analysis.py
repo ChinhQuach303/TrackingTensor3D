@@ -1,85 +1,120 @@
 import numpy as np
 import mne
-import pandas as pd
-from sklearn.cross_decomposition import CCA
 import matplotlib.pyplot as plt
+from scipy.linalg import eigh
+from pathlib import Path
 from config import *
 
-def run_fcca_analysis():
-    print("Bắt đầu phân tích FCCA (Functional Canonical Correlation Analysis)...")
+def get_fiedler_vector(adj_matrix):
+    """
+    Tính Fiedler vector (eigenvector tương ứng với eigenvalue nhỏ thứ 2)
+    của ma trận Laplacian từ ma trận kề adj_matrix.
+    """
+    n = adj_matrix.shape[0]
+    # Degree matrix
+    d = np.diag(np.sum(adj_matrix, axis=1))
+    # Laplacian
+    laplacian = d - adj_matrix
     
-    # 1. Load Preprocessed Data (Refined Epochs)
-    sub_files = list(REFINED_DIR.glob("*_theta_balanced-epo.fif"))
-    sub_files.sort()
+    # Giải bài toán trị riêng (eigh cho ma trận đối xứng)
+    eigenvalues, eigenvectors = eigh(laplacian)
     
-    # define modules
-    modules = {
-        'Frontal': ['Fp1', 'Fp2', 'F3', 'F4', 'Fz', 'F7', 'F8'],
-        'F-Central': ['FC3', 'FC4', 'FCz'],
-        'Central': ['Cz', 'C3', 'C4', 'C5', 'C6'],
-        'Parietal': ['Pz', 'P3', 'P4', 'P7', 'P8', 'P9', 'P10', 'CPz'],
-        'Occipital': ['POz', 'PO3', 'PO4', 'PO7', 'PO8', 'O1', 'O2', 'Oz']
-    }
+    # Lấy eigenvector tương ứng với eigenvalue nhỏ thứ 2 (index 1)
+    # Lưu ý: eigenvalue nhỏ nhất thường là 0 (hoặc xấp xỉ 0)
+    fiedler_vec = eigenvectors[:, 1]
+    return fiedler_vec
+
+def fiedler_consensus_clustering(connectivity_tensor, time_window):
+    """
+    Cài đặt Fiedler Consensus Clustering Algorithm (FCCA) theo Ozdemir (2017).
+    """
+    n_subs, n_nodes, _, n_times = connectivity_tensor.shape
+    start_t, end_t = time_window
     
-    module_names = list(modules.keys())
-    n_mods = len(module_names)
-    fcca_matrix_inc = np.zeros((n_mods, n_mods))
-    fcca_matrix_cor = np.zeros((n_mods, n_mods))
+    # Ma trận Co-occurrence W
+    W = np.zeros((n_nodes, n_nodes))
+    count = 0
     
-    for i_sub, f in enumerate(sub_files):
-        print(f"  Processing {f.name} ({i_sub+1}/{len(sub_files)})...")
-        epochs = mne.read_epochs(f, preload=True, verbose=False)
-        ch_names = epochs.ch_names
-        
-        for cond, matrix in zip(['Incorrect', 'Correct'], [fcca_matrix_inc, fcca_matrix_cor]):
-            data = epochs[cond].get_data() # (trials, channels, times)
+    print(f"  Đang chạy FCCA trên cửa sổ thời gian {start_t}ms đến {end_t}ms...")
+    
+    # Duyệt qua từng subject và từng thời điểm trong cửa sổ
+    # (Trong thực tế có thể lấy trung bình theo thời gian trước để giảm tải nếu tensor quá lớn)
+    time_indices = np.where((np.linspace(-1000, 1000, n_times) >= start_t) & 
+                            (np.linspace(-1000, 1000, n_times) <= end_t))[0]
+    
+    for s in range(n_subs):
+        for t in time_indices:
+            adj = connectivity_tensor[s, :, :, t]
             
-            for i in range(n_mods):
-                for j in range(i+1, n_mods):
-                    # Get channels for each module
-                    chs_i = [ch_names.index(ch) for ch in modules[module_names[i]] if ch in ch_names]
-                    chs_j = [ch_names.index(ch) for ch in modules[module_names[j]] if ch in ch_names]
-                    
-                    if not chs_i or not chs_j: continue
-                    
-                    # Prepare X and Y (Combining trials and time for canonical correlation)
-                    # X: (trials * times, channels_in_module_i)
-                    X = data[:, chs_i, :].transpose(0, 2, 1).reshape(-1, len(chs_i))
-                    Y = data[:, chs_j, :].transpose(0, 2, 1).reshape(-1, len(chs_j))
-                    
-                    # CCA
-                    cca = CCA(n_components=1)
-                    X_c, Y_c = cca.fit_transform(X, Y)
-                    corr = np.corrcoef(X_c.T, Y_c.T)[0, 1]
-                    
-                    matrix[i, j] += corr
-                    matrix[j, i] += corr # Symmetric
-                    
-    # Average across subjects
-    fcca_matrix_inc /= len(sub_files)
-    fcca_matrix_cor /= len(sub_files)
+            # 1. Tìm Fiedler vector cho từng mạng đơn lẻ
+            f_vec = get_fiedler_vector(adj)
+            
+            # 2. Bi-partition dựa trên dấu của Fiedler vector
+            clusters = (f_vec > 0).astype(int)
+            
+            # 3. Cập nhật Co-occurrence matrix T_r
+            # Tr(i,j) = 1 nếu i và j cùng cluster, 0 nếu khác
+            T_r = (clusters[:, None] == clusters[None, :]).astype(float)
+            W += T_r
+            count += 1
+            
+    # 4. Tính xác suất đồng xuất hiện (Consensus Matrix)
+    W /= count
     
-    # 3. Visualization
+    # 5. Tìm Fiedler vector của ma trận Consensus W
+    consensus_f_vec = get_fiedler_vector(W)
+    final_clusters = (consensus_f_vec > 0).astype(int)
+    
+    return final_clusters, W
+
+def main():
+    print("Khởi động Phân tích FCCA (Fiedler Consensus Clustering)...")
+    
+    # Load Connectivity Tensor (Incorrect condition tập trung vào ERN)
+    if not TENSOR_INCORRECT_FILE.exists():
+        print("Lỗi: Không tìm thấy file tensor. Vui lòng chạy master_connectivity.py trước.")
+        return
+        
+    tensor_inc = np.load(TENSOR_INCORRECT_FILE)
+    
+    # Cửa sổ thời gian ERN (thường từ 0ms đến 150ms sau phản ứng)
+    ern_window = (0, 150) 
+    
+    clusters, W_consensus = fiedler_consensus_clustering(tensor_inc, ern_window)
+    
+    # Lấy tên kênh từ epoch mẫu
+    sample_epo = mne.read_epochs(list(EPOCHS_DIR.glob("*.fif"))[0], preload=False, verbose=False)
+    ch_names = sample_epo.ch_names
+    
+    # Hiển thị kết quả phân cụm
+    print("\nKẾT QUẢ PHÂN CỤM (FCCA):")
+    cluster_0 = [ch_names[i] for i, c in enumerate(clusters) if c == 0]
+    cluster_1 = [ch_names[i] for i, c in enumerate(clusters) if c == 1]
+    
+    print(f"Cluster A: {', '.join(cluster_0)}")
+    print(f"Cluster B: {', '.join(cluster_1)}")
+    
+    # Visualization
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     
-    for ax, mat, title in zip(axes, [fcca_matrix_cor, fcca_matrix_inc], ['Correct', 'Incorrect (ERN)']):
-        im = ax.imshow(mat, vmin=0, vmax=0.6, cmap='YlGnBu')
-        ax.set_xticks(range(n_mods))
-        ax.set_xticklabels(module_names, rotation=45)
-        ax.set_yticks(range(n_mods))
-        ax.set_yticklabels(module_names)
-        ax.set_title(f"FCCA Module Interaction: {title}")
-        plt.colorbar(im, ax=ax)
-        
-        # Add text values
-        for r in range(n_mods):
-            for c in range(n_mods):
-                ax.text(c, r, f"{mat[r,c]:.2f}", ha='center', va='center', color='black')
-
+    # 1. Co-occurrence Matrix
+    im = axes[0].imshow(W_consensus, cmap='YlGnBu')
+    axes[0].set_title("Consensus Co-occurrence Matrix (W)")
+    plt.colorbar(im, ax=axes[0])
+    
+    # 2. Topomap of clusters
+    from mne.viz import plot_topomap
+    info = mne.create_info(ch_names, SFREQ, ch_types='eeg')
+    info.set_montage(MONTAGE_NAME)
+    
+    # Màu sắc cho 2 cụm
+    plot_topomap(clusters, info, axes=axes[1], show=False, cmap='RdBu_r', sphere=0.1)
+    axes[1].set_title("FCCA Consensus Clusters (Red vs Blue)")
+    
     plt.tight_layout()
-    output_img = OUTPUTS_DIR / "fcca_module_relationships.png"
+    output_img = OUTPUTS_DIR / "fcca_ozdemir_results.png"
     plt.savefig(output_img)
-    print(f"FCCA Analysis complete. Results saved to: {output_img}")
+    print(f"\nKết quả FCCA đã được lưu tại: {output_img}")
 
 if __name__ == "__main__":
-    run_fcca_analysis()
+    main()

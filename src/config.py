@@ -3,7 +3,7 @@ from pathlib import Path
 # ==========================================
 # 📂 DIRECTORY STRUCTURE
 # ==========================================
-BASE_PATH = Path("/home/chinh303/code/tensortracking/TrackingTensor3D")
+BASE_PATH = Path(__file__).resolve().parent.parent
 DATA_RAW = BASE_PATH
 DATA_PROCESSED = BASE_PATH / "data" / "processed"
 
