@@ -73,25 +73,37 @@ class HORLSDecomposer:
         
         energy = torch.zeros(n_times, device=self.device)
         weights_evolution = torch.zeros((n_chan, n_times), device=self.device)
+        lowrank_tensor = torch.zeros_like(tensor_4d, device=self.device)
         
         for t in range(n_times):
             # X_t: Tensor 3 chiều tại thời điểm t (S, N, N)
             X_t = tensor_4d[:, :, :, t].to(self.device)
             
             # --- BƯỚC A: Tucker Projection (Core Tensor Energy) ---
+            # core = X_t x1 U.T x2 U.T x3 V.T
             temp = torch.tensordot(X_t, self.U, dims=([1], [0])) # (S, N, r)
             temp = torch.tensordot(temp, self.U, dims=([1], [0])) # (S, r, r)
             core = torch.tensordot(temp, self.V, dims=([0], [0])) # (r, r, r)
             
             energy[t] = torch.norm(core)**2
-            weights_evolution[:, t] = self.U[:, 0] # Lưu hướng dominant
+            weights_evolution[:, t] = self.U[:, 0]
+            
+            # --- TÁI CẤU TRÚC LOW-RANK (L_t) THEO BÀI BÁO ---
+            # L_t = core x1 U x2 U x3 V
+            # Đây là mạng lưới đã được khử nhiễu (Denoised Network)
+            l_temp = torch.tensordot(core, self.V, dims=([2], [0])) # (r, r, S)
+            l_temp = torch.tensordot(l_temp, self.U, dims=([0], [0])) # (r, S, N)
+            L_t = torch.tensordot(l_temp, self.U, dims=([0], [0])) # (S, N, N)
+            
+            # Chuyển đổi về đúng thứ tự chiều (S, N, N) và lưu lại
+            lowrank_tensor[:, :, :, t] = L_t.permute(1, 2, 0)
             
             # --- BƯỚC B: Recursive Update (Cập nhật Subspace mỗi alpha bước) ---
             if t > 0 and t % self.alpha == 0:
                 window = tensor_4d[:, :, :, t-self.alpha : t].to(self.device)
                 self.update_subspace(window)
 
-        return weights_evolution.cpu().numpy(), energy.cpu().numpy()
+        return weights_evolution.cpu().numpy(), energy.cpu().numpy(), lowrank_tensor.cpu().numpy()
 
 def find_change_points(energy, threshold_factor=1.5):
     # Detect abrupt changes in energy derivative
@@ -120,11 +132,12 @@ def main():
         n_subs, n_nodes = tensor.shape[0], tensor.shape[1]
         
         decomposer = HORLSDecomposer(n_nodes=n_nodes, n_subs=n_subs, device=device)
-        w_t, energy = decomposer.decompose(tensor)
+        w_t, energy, L_t = decomposer.decompose(tensor)
         
         # Save results for statistical validation
         np.save(TENSOR_DIR / f"horls_weights_{cond}.npy", w_t)
         np.save(TENSOR_DIR / f"horls_energy_{cond}.npy", energy)
+        np.save(TENSOR_DIR / f"horls_lowrank_{cond}.npy", L_t)
         
         if cond == 'incorrect':
             # Find Change-points for the Incorrect condition (main focus of the paper)

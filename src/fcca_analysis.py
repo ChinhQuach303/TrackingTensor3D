@@ -70,12 +70,13 @@ def fiedler_consensus_clustering(connectivity_tensor, time_window):
 def main():
     print("Khởi động Phân tích FCCA (Fiedler Consensus Clustering)...")
     
-    # Load Connectivity Tensor (Incorrect condition tập trung vào ERN)
-    if not TENSOR_INCORRECT_FILE.exists():
-        print("Lỗi: Không tìm thấy file tensor. Vui lòng chạy master_connectivity.py trước.")
+    # Load Low-rank Connectivity Tensor (Đã được khử nhiễu bởi HO-RLSL)
+    lowrank_file = TENSOR_DIR / "horls_lowrank_incorrect.npy"
+    if not lowrank_file.exists():
+        print("Lỗi: Không tìm thấy file tensor low-rank. Vui lòng chạy tensor_decomposition.py trước.")
         return
         
-    tensor_inc = np.load(TENSOR_INCORRECT_FILE)
+    tensor_inc = np.load(lowrank_file)
     
     # Cửa sổ thời gian ERN (thường từ 0ms đến 150ms sau phản ứng)
     ern_window = (0, 150) 
