@@ -1,23 +1,63 @@
 import mne
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
-from mne.preprocessing import ICA, compute_current_source_density
+from mne.preprocessing import compute_current_source_density
 import os
 from config import *
 
-def preprocess_subject_ozdemir_style(sub_id):
-    raw_path = BASE_PATH / sub_id / "eeg" / f"{sub_id}_task-ERN_eeg.set"
+def visualize_preprocessing_comparison(raw_orig, raw_csd, sub_id):
+    """Vẽ so sánh tín hiệu trước và sau khi tiền xử lý (No ICA, Yes CSD)."""
+    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
     
-    # 1. Load Raw
+    # 1. Butterfly Plot - Trước (Raw)
+    data_orig = raw_orig.get_data() * 1e6
+    times = raw_orig.times
+    # Lấy 5 giây
+    t_end = min(25, times[-1])
+    t_start = max(0, t_end - 5)
+    start, stop = raw_orig.time_as_index([t_start, t_end])
+    
+    axes[0, 0].plot(times[start:stop], data_orig[:, start:stop].T, color='black', alpha=0.3)
+    axes[0, 0].set_title(f"{sub_id} - RAW (Butterfly)")
+    axes[0, 0].set_ylabel("Amplitude (μV)")
+    
+    # 2. Butterfly Plot - Sau (CSD + Filter)
+    data_csd = raw_csd.get_data() * 1e6
+    axes[0, 1].plot(times[start:stop], data_csd[:, start:stop].T, color='teal', alpha=0.3)
+    axes[0, 1].set_title(f"{sub_id} - PREPROCESSED (CSD + Filter)")
+    axes[0, 1].set_ylabel("Amplitude (μV/mm²)")
+
+    # 3. PSD - Trước
+    raw_orig.compute_psd(fmax=45).plot(axes=axes[1, 0], show=False)
+    axes[1, 0].set_title("PSD - RAW")
+
+    # 4. PSD - Sau
+    raw_csd.compute_psd(fmax=45).plot(axes=axes[1, 1], show=False)
+    axes[1, 1].set_title("PSD - PREPROCESSED")
+
+    plt.tight_layout()
+    comp_path = OUTPUTS_DIR / f"preprocess_comp_{sub_id}.png"
+    plt.savefig(comp_path)
+    plt.close()
+    print(f"  -> Đã lưu so sánh tiền xử lý: {comp_path}")
+
+def preprocess_subject_ozdemir_style(sub_id, visualize=False):
+    """
+    Tiền xử lý theo Ozdemir (2017):
+    - KHÔNG DÙNG ICA.
+    - Dùng CSD (Current Source Density).
+    """
+    raw_path = DATA_RAW / sub_id / "eeg" / f"{sub_id}_task-ERN_eeg.set"
+    if not raw_path.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {raw_path}")
+        
     raw = mne.io.read_raw_eeglab(raw_path, preload=True, verbose=False)
     
-    # Rename for MNE Montage awareness (FP1 -> Fp1, etc.)
+    # Rename & Montage (Làm trước khi copy để đồng bộ)
     rename_map = {'FP1': 'Fp1', 'FP2': 'Fp2'}
     raw.rename_channels(lambda x: rename_map.get(x, x))
-    
-    # Set types
-    raw.set_channel_types({ch: 'eog' for ch in EOG_CHANNELS if ch in raw.ch_names})
     raw.set_montage(MONTAGE_NAME, on_missing='ignore')
     
     # 2. Resampling & Filtering
@@ -26,24 +66,15 @@ def preprocess_subject_ozdemir_style(sub_id):
     
     # 3. Pick Channels
     available_eeg = [ch for ch in EEG_CHANNELS if ch in raw.ch_names]
-    active_eog = [ch for ch in EOG_CHANNELS if ch in raw.ch_names]
-    raw.pick_channels(available_eeg + active_eog)
+    raw_eeg_only = raw.copy().pick_channels(available_eeg)
     
-    # 4. ICA
-    ica = ICA(n_components=ICA_COMPONENTS, random_state=42, method=ICA_METHOD, fit_params=dict(extended=True))
-    ica.fit(raw, verbose=False)
-    # EOG Rejection
-    eog_indices, _ = ica.find_bads_eog(raw, ch_name='Fp1', verbose=False)
-    ica.exclude = eog_indices
-    raw_cleaned = ica.apply(raw.copy(), verbose=False)
+    # 4. CSD
+    raw_csd = compute_current_source_density(raw_eeg_only, verbose=False)
     
-    # 5. CSD
-    raw_eeg = raw_cleaned.copy().pick_types(eeg=True)
-    valid_eeg = [ch for ch in raw_eeg.ch_names if raw_eeg.info['chs'][raw_eeg.ch_names.index(ch)]['loc'][:3].any()]
-    raw_eeg.pick_channels(valid_eeg)
-    raw_csd = compute_current_source_density(raw_eeg, verbose=False)
+    if visualize:
+        visualize_preprocessing_comparison(raw_eeg_only, raw_csd, sub_id)
     
-    # 6. Epoching
+    # 5. Epoching
     events, event_id = mne.events_from_annotations(raw_csd, verbose=False)
     correct_codes = [l for l in event_id.keys() if len(l) == 3 and l[0] == l[2]]
     incorrect_codes = [l for l in event_id.keys() if len(l) == 3 and l[0] != l[2]]
@@ -61,18 +92,30 @@ def preprocess_subject_ozdemir_style(sub_id):
     return epochs
 
 if __name__ == "__main__":
-    sub_dirs = [d.name for d in BASE_PATH.iterdir() if d.is_dir() and d.name.startswith('sub-')]
-    sub_dirs.sort()
+    sub_ids = sorted([d.name for d in DATA_RAW.glob("sub-*") if d.is_dir()])
     
     report_data = []
-    print(f"Running Preprocessing using Global Config...")
-    for sub in sub_dirs:
+    print(f"🚀 Chạy lại tiền xử lý (Ozdemir Style - NO ICA) cho {len(sub_ids)} subjects...")
+    
+    visualized = False
+    for i, sub in enumerate(sub_ids):
         try:
-            ep = preprocess_subject_ozdemir_style(sub)
-            report_data.append({'sub': sub, 'status': 'SUCCESS', 'correct': len(ep['Correct']), 'incorrect': len(ep['Incorrect'])})
-            print(f"  DONE: {sub} ({len(ep.ch_names)} EEG channels)")
+            # Visualize cho subject đầu tiên thành công
+            ep = preprocess_subject_ozdemir_style(sub, visualize=(not visualized))
+            visualized = True # Đánh dấu đã visualize thành công một mẫu
+            
+            report_data.append({
+                'sub': sub, 
+                'status': 'SUCCESS', 
+                'correct': len(ep['Correct']), 
+                'incorrect': len(ep['Incorrect'])
+            })
+            if (i + 1) % 10 == 0:
+                print(f"  Done: {i+1}/{len(sub_ids)} subjects...")
+                
         except Exception as e:
             report_data.append({'sub': sub, 'status': f'FAILED: {e}', 'correct': 0, 'incorrect': 0})
-            print(f"  FAILED: {sub} | {e}")
+            print(f"  ❌ FAILED: {sub} | {e}")
             
     pd.DataFrame(report_data).to_csv(REPORT_ETL, index=False)
+    print(f"\n✅ HOÀN TẤT! Báo cáo: {REPORT_ETL}")

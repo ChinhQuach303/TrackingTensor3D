@@ -4,8 +4,8 @@ from pathlib import Path
 # 📂 DIRECTORY STRUCTURE
 # ==========================================
 BASE_PATH = Path(__file__).resolve().parent.parent
-DATA_RAW = BASE_PATH
-DATA_PROCESSED = BASE_PATH / "data" / "processed"
+DATA_RAW = BASE_PATH / "data" / "raw" / "ERN Raw Data BIDS-Compatible"
+DATA_PROCESSED = BASE_PATH / "data" / "processed_v2"
 
 # Sub-directories
 EPOCHS_DIR = DATA_PROCESSED / "master_epochs"
