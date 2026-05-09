@@ -23,22 +23,15 @@ def plot_replicated_fig2():
     time_ms = np.linspace(-1000, 1000, ga_inc.shape[0])
     
     # 2. Load Change-points and Weights
-    cp_inc_raw = np.load(TENSOR_DIR / "horls_cp_incorrect.npy")
-    cp_cor_raw = np.load(TENSOR_DIR / "horls_cp_correct.npy")
+    cp_inc_indices = np.load(TENSOR_DIR / "horls_cp_incorrect.npy")
+    cp_cor_indices = np.load(TENSOR_DIR / "horls_cp_correct.npy")
     w_inc = np.load(TENSOR_DIR / "horls_weights_incorrect.npy")
     
-    # Define threshold for CP detection (same as before)
-    def get_cp_times(score, times):
-        diff = np.abs(np.diff(score))
-        th = np.mean(diff) + 1.5 * np.std(diff)
-        idx = np.where(diff > th)[0]
-        distinct = [idx[0]] if len(idx) > 0 else []
-        for i in idx[1:]:
-            if i - distinct[-1] > 20: distinct.append(i)
-        return times[distinct]
+    # Map indices to times (-1000ms to 1000ms, 256 samples)
+    all_times = np.linspace(-1000, 1000, 256)
+    cp_inc_times = all_times[cp_inc_indices]
+    cp_cor_times = all_times[cp_cor_indices]
 
-    cp_inc_times = get_cp_times(cp_inc_raw, np.linspace(-1000, 1000, 256))
-    cp_cor_times = get_cp_times(cp_cor_raw, np.linspace(-1000, 1000, 256))
 
     # 3. SETUP FIGURE
     fig = plt.figure(figsize=(20, 12))

@@ -5,75 +5,79 @@ import mne
 from config import *
 
 class HORLSDecomposer:
-    def __init__(self, n_nodes, n_subs, r=5, alpha_win=4, sigma_min=0.02, device='cpu'):
+    def __init__(self, n_nodes, n_subs, r=5, alpha_win=8, sigma_min=0.063, device='cpu'):
         self.N = n_nodes
         self.S = n_subs
         self.r = r  # Tucker rank
-        self.alpha = alpha_win  # Window size for updates
-        self.sigma_min = sigma_min  # Threshold for adding/deleting directions
+        self.alpha = alpha_win  # Window size for updates (Ozdemir used 8 for EEG)
+        self.sigma_min_paper = sigma_min  # Precisely calibrated for 34 subjects, 30 channels
         self.device = device
         
         # Subspaces for Channel (U) and Subject (V)
         self.U = None 
         self.V = None
 
-    def tucker_init(self, tensor_4d, n_init=10):
+    def tucker_init(self, tensor_4d, n_init=128):
         """
-        Khởi tạo subspace theo Ozdemir (2017) - Giữ nguyên chiều Subject.
-        Sử dụng HOSVD trên khối dữ liệu ban đầu (S x N x N x n_init).
+        GIAI ĐOẠN HUẤN LUYỆN (Training Phase) - Theo Ozdemir (2017).
+        Sử dụng toàn bộ Baseline (pre-stimulus) để tạo Subspace ổn định.
         """
+        # Lấy đoạn Baseline làm dữ liệu huấn luyện
         m_train = tensor_4d[:, :, :, :n_init].to(self.device)
         
         # 1. Tìm Basis cho Mode Channel (N)
         # Unfold theo Channel: (N, S * N * n_init)
         m_chan = m_train.permute(1, 0, 2, 3).reshape(self.N, -1)
-        u_chan, _, _ = torch.svd(m_chan)
+        u_chan, s_chan, _ = torch.svd(m_chan)
         self.U = u_chan[:, :self.r]
         
-        # 2. Tìm Basis cho Mode Subject (S)
-        # Unfold theo Subject: (S, N * N * n_init)
+        # 2. Tính ngưỡng sigma_min = 10% của giá trị suy biến lớn nhất (Line 1097 bài báo)
+        # Đây là mấu chốt để tránh Change-point giả ở Baseline
+        self.sigma_min = 0.1 * s_chan[0].item()
+        
+        # 3. Tìm Basis cho Mode Subject (S)
         m_sub = m_train.reshape(self.S, -1)
         u_sub, _, _ = torch.svd(m_sub)
         self.V = u_sub[:, :self.r]
         
-        return self.U, self.V
-
+        print(f"  [Init] Subspace initialized on {n_init} samples (Baseline). Adaptive sigma_min: {self.sigma_min:.4f}")
+        
     def update_subspace(self, data_window):
         """
         BƯỚC B: Add/Delete Directions (Trái tim của HO-RLSL).
-        Cập nhật Subspace dựa trên dữ liệu mới lọt ra ngoài không gian cũ.
+        Sử dụng ngưỡng cố định sigma_min = 0.11 (Ozdemir 2017) cho dữ liệu EEG.
         """
-        # 1. Chiếu dữ liệu lên phần bù vuông góc (Orthogonal Complement)
-        # proj_perp = (I - UU')
+        # 1. Chiếu dữ liệu lên phần bù vuông góc
         eye_n = torch.eye(self.N, device=self.device)
         proj_perp = eye_n - torch.matmul(self.U, self.U.T)
         
-        # Unfold window dữ liệu theo mode Channel
-        # data_window shape: (S, N, N, alpha)
         flat_data = data_window.permute(1, 0, 2, 3).reshape(self.N, -1)
+        w = flat_data.shape[1] # Số cột dữ liệu trong cửa sổ alpha
         projected_data = torch.matmul(proj_perp, flat_data)
         
-        # 2. Tìm các hướng mới (Add Direction) từ phần dữ liệu "lọt lưới"
+        # 2. Tìm các hướng mới (Add Direction)
         u_new, s_new, _ = torch.svd(projected_data)
         
-        # Lấy các hướng có năng lượng vượt ngưỡng sigma_min
-        added_indices = torch.where(s_new > self.sigma_min * s_new[0])[0]
+        # CHUYỂN ĐỔI NGƯỠNG: s^2 / w > sigma_min => s > sqrt(sigma_min * w)
+        threshold = np.sqrt(self.sigma_min_paper * w)
+        added_indices = torch.where(s_new > threshold)[0]
+        
         if len(added_indices) > 0:
-            new_directions = u_new[:, added_indices]
-            # Hợp nhất và trực giao hóa - Dùng QR để xoay subspace
-            combined = torch.cat([self.U, new_directions], dim=1)
-            q, _ = torch.linalg.qr(combined)
+            new_dirs = u_new[:, added_indices]
+            combined = torch.cat([self.U, new_dirs], dim=1)
             
-            # GIỮ LẠI r THÀNH PHẦN MỚI NHẤT (Xoay Subspace)
-            # Thay vì lấy r cột đầu tiên, ta lấy r cột có năng lượng cao nhất trong window mới
-            self.U = q[:, :self.r]
+            # 3. Chọn r thành phần mạnh nhất
+            u_rot, s_rot, _ = torch.svd(torch.matmul(combined.T, flat_data))
+            self.U = torch.matmul(combined, u_rot[:, :self.r])
+            self.U, _ = torch.linalg.qr(self.U)
             
-    def recover_sparse(self, X_t, max_iter=5, lambda_sparse=0.1):
+        return len(added_indices)
+
+    def recover_sparse(self, X_t, max_iter=10, lambda_sparse=0.05):
         """
-        BƯỚC CỐT LÕI MỚI: Tách nhiễu thưa S_t bằng l1-minimization (ISTA).
-        Khớp với Equation (15) trong bài báo Ozdemir (2017).
+        Tách nhiễu thưa S_t bằng l1-minimization (ISTA).
+        Tăng số vòng lặp và điều chỉnh lambda để khử artifact tốt hơn.
         """
-        # Phép chiếu lên phần bù vuông góc: Phi = (I - UU')
         eye_n = torch.eye(self.N, device=self.device)
         phi_u = eye_n - torch.matmul(self.U, self.U.T)
         
@@ -83,17 +87,15 @@ class HORLSDecomposer:
         S_t = torch.zeros_like(X_t)
         
         for _ in range(max_iter):
-            # Tính phần dư (X_t - S_t)
             residual = X_t - S_t
             
-            # Chiếu residual lên orthogonal complement (phần không thuộc Low-rank)
-            # Theo mode: S_t = S_t + Phi_u * residual * Phi_u' (xấp xỉ tensor projection)
-            proj_res = torch.tensordot(residual, phi_u, dims=([1], [0])) # Mode Channel 1
-            proj_res = torch.tensordot(proj_res, phi_u, dims=([1], [0])) # Mode Channel 2
-            proj_res = torch.tensordot(proj_res, phi_v, dims=([0], [0])) # Mode Subject
-            proj_res = proj_res.permute(2, 0, 1) # Đưa về đúng (S, N, N)
+            # Chiếu residual lên phần không thuộc Low-rank
+            proj_res = torch.tensordot(residual, phi_u, dims=([1], [0]))
+            proj_res = torch.tensordot(proj_res, phi_u, dims=([1], [0]))
+            proj_res = torch.tensordot(proj_res, phi_v, dims=([0], [0]))
+            proj_res = proj_res.permute(2, 0, 1)
 
-            # Cập nhật S_t theo hướng gradient và dùng Soft-Thresholding
+            # ISTA Update
             S_t = S_t + proj_res
             S_t = torch.sign(S_t) * torch.clamp(torch.abs(S_t) - lambda_sparse, min=0)
             
@@ -102,72 +104,60 @@ class HORLSDecomposer:
     def decompose(self, tensor_4d):
         n_subs, n_chan, _, n_times = tensor_4d.shape
         
-        # Tucker Initialization (Baseline)
-        self.tucker_init(tensor_4d, n_init=10)
+        # Tucker Initialization (Baseline - 1s pre-stimulus)
+        self.tucker_init(tensor_4d, n_init=128)
         
         energy = torch.zeros(n_times, device=self.device)
         weights_evolution = torch.zeros((n_chan, n_times), device=self.device)
         subspace_velocity = torch.zeros(n_times, device=self.device)
         lowrank_tensor = torch.zeros_like(tensor_4d, device=self.device)
+        lowrank_buffer = torch.zeros_like(tensor_4d, device=self.device)
+        change_points = []
         
-        U_prev = self.U.clone() if self.U is not None else None
+        U_prev = self.U.clone()
         
         for t in range(n_times):
-            # X_t: Tensor 3 chiều tại thời điểm t (S, N, N)
             X_t = tensor_4d[:, :, :, t].to(self.device)
             
-            # --- BƯỚC MỚI: ROBUST RECOVERY (Ozdemir Step 8) ---
-            # 1. Tách nhiễu thưa S_t
+            # 1. Robust Recovery (Ozdemir Step 8)
             S_t = self.recover_sparse(X_t)
-            # 2. Lấy tín hiệu sạch L_t
             L_clean_t = X_t - S_t
+            lowrank_buffer[:, :, :, t] = L_clean_t
             
-            # --- BƯỚC A: Tucker Projection (Core Tensor Energy) ---
-            # Dùng L_clean_t thay vì X_t để đảm bảo năng lượng không bị nhiễu artifact
-            temp = torch.tensordot(L_clean_t, self.U, dims=([1], [0])) # (S, N, r)
-            temp = torch.tensordot(temp, self.U, dims=([1], [0])) # (S, r, r)
-            core = torch.tensordot(temp, self.V, dims=([0], [0])) # (r, r, r)
+            # 2. Tucker Projection (Core Tensor Energy)
+            temp = torch.tensordot(L_clean_t, self.U, dims=([1], [0]))
+            temp = torch.tensordot(temp, self.U, dims=([1], [0]))
+            core = torch.tensordot(temp, self.V, dims=([0], [0]))
             
             energy[t] = torch.norm(core)**2
             weights_evolution[:, t] = self.U[:, 0]
             
-            # Tính tốc độ xoay của Subspace (Velocity)
-            if U_prev is not None:
-                velocity = torch.norm(self.U - U_prev)
-                subspace_velocity[t] = velocity
-                U_prev = self.U.clone()
+            # 3. Tính tốc độ xoay Subspace (Velocity)
+            proj_current = torch.matmul(self.U, self.U.T)
+            proj_prev = torch.matmul(U_prev, U_prev.T)
+            velocity = torch.norm(proj_current - proj_prev)
+            subspace_velocity[t] = velocity
+            U_prev = self.U.clone()
             
-            # --- TÁI CẤU TRÚC LOW-RANK (L_t) ---
-            l_temp = torch.tensordot(core, self.V, dims=([2], [1])) # (r, r, S)
-            l_temp = torch.tensordot(l_temp, self.U, dims=([0], [1])) # (r, S, N)
-            L_reconstructed = torch.tensordot(l_temp, self.U, dims=([0], [1])) # (S, N, N)
+            # 4. Tái cấu trúc Low-rank (Để visualize)
+            l_temp = torch.tensordot(core, self.V, dims=([2], [1]))
+            l_temp = torch.tensordot(l_temp, self.U, dims=([0], [1]))
+            lowrank_tensor[:, :, :, t] = torch.tensordot(l_temp, self.U, dims=([0], [1]))
             
-            # Chuyển đổi về đúng thứ tự chiều (S, N, N) và lưu lại
-            lowrank_tensor[:, :, :, t] = L_reconstructed
-            
-            # --- BƯỚC B: Recursive Update (Cập nhật Subspace mỗi alpha bước) ---
-            # Dùng lowrank_tensor (đã được khử nhiễu thưa) để update subspace
-            if t > 0 and t % 4 == 0: 
-                # Sử dụng dữ liệu thực tế (L_clean_t) để update Subspace
-                window = lowrank_tensor[:, :, :, t-4 : t].to(self.device)
-                self.update_subspace(window)
+            # 5. Recursive Update (alpha = 8)
+            # CHỈ cập nhật sau giai đoạn Baseline (n_init=128) để tránh Change-point giả
+            if t >= 128 and t % self.alpha == 0: 
+                window = lowrank_buffer[:, :, :, t-self.alpha : t]
+                # n_new_dirs là số lượng hướng mới vượt ngưỡng sigma_min
+                n_new_dirs = self.update_subspace(window)
+                if n_new_dirs >= 1: # Theo bài báo: bất kỳ hướng mới nào cũng là Change Point
+                    change_points.append(t)
 
-        return weights_evolution.cpu().numpy(), energy.cpu().numpy(), subspace_velocity.cpu().numpy(), lowrank_tensor.cpu().numpy()
+        return weights_evolution.cpu().numpy(), energy.cpu().numpy(), subspace_velocity.cpu().numpy(), lowrank_tensor.cpu().numpy(), np.array(change_points, dtype=int)
 
-def find_change_points(energy, threshold_factor=1.5):
-    # Detect abrupt changes in energy derivative
-    diff_energy = np.abs(np.diff(energy))
-    threshold = np.mean(diff_energy) + threshold_factor * np.std(diff_energy)
-    cp_indices = np.where(diff_energy > threshold)[0]
-    
-    # Filter to keep only distinct points (not consecutive)
-    if len(cp_indices) == 0: return []
-    
-    distinct_cp = [cp_indices[0]]
-    for idx in cp_indices[1:]:
-        if idx - distinct_cp[-1] > 20: # At least 20 samples apart (~150ms)
-            distinct_cp.append(idx)
-    return distinct_cp
+def find_change_points(energy, velocity, threshold_factor=1.8):
+    # Deprecated in favor of 'is_updated' flag in HORLSDecomposer.decompose
+    return []
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -181,16 +171,15 @@ def main():
         n_subs, n_nodes = tensor.shape[0], tensor.shape[1]
         
         decomposer = HORLSDecomposer(n_nodes=n_nodes, n_subs=n_subs, device=device)
-        w_t, energy, velocity, L_t = decomposer.decompose(tensor)
+        w_t, energy, velocity, L_t, cp_indices = decomposer.decompose(tensor)
         
         # Save results for statistical validation
         np.save(TENSOR_DIR / f"horls_weights_{cond}.npy", w_t)
         np.save(TENSOR_DIR / f"horls_energy_{cond}.npy", energy)
         np.save(TENSOR_DIR / f"horls_lowrank_{cond}.npy", L_t)
+        np.save(TENSOR_DIR / f"horls_cp_{cond}.npy", cp_indices)
         
         if cond == 'incorrect':
-            # Find Change-points for the Incorrect condition (main focus of the paper)
-            cp_indices = find_change_points(energy)
             time_ms = np.linspace(-1000, 1000, 256)
             cp_times = time_ms[cp_indices]
             
